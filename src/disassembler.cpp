@@ -380,15 +380,19 @@ namespace disassembler
     return {"SET", operands, {}, 2, cycles, cycles};
 }
 
-    void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr = 0, size_t count = 10)
+    void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr = 0, size_t end_addr = 0)
     {
         std::println("Disassembly:");
         std::println("Addr  Instruction           Flags     Regs   Len  Cycles");
         std::println("----  --------------------  --------  -----  ---  ------");
 
-        size_t i = 0;
+        if (end_addr == 0 || end_addr > rom.size())
+        {
+            end_addr = rom.size();
+        }
+
         size_t addr = start_addr;
-        while (i < count && addr < rom.size())
+        while (addr < end_addr)
         {
             uint8_t bytes[3] = {0};
             size_t available = std::min(size_t(3), rom.size() - addr);
@@ -402,15 +406,14 @@ namespace disassembler
             instr.print(addr, bytes);
 
             addr += instr.length;
-            ++i;
         }
     }
 
-    void disassemble_rom(const std::vector<uint8_t> &rom)
+    void disassemble_rom(const std::vector<uint8_t> &rom, size_t start_addr = 0x100, size_t end_addr = 0)
     {
         std::println("ROM size: {} bytes", rom.size());
         std::println("");
-        print_disassembly(rom, 0x100, 20); // Start at 0x100 (typical entry point)
+        print_disassembly(rom, start_addr, end_addr);
     }
 
     // Debug helper: print a single instruction at PC
