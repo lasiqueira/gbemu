@@ -37,9 +37,15 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
+**Windows: Use clang-cl for better optimization:**
+```powershell
+cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 && cmake -B build -G "Visual Studio 17 2022" -T ClangCL'
+cmake --build build --config Release
+```
+
 The build system uses:
-- `-march=native` on Linux/macOS (maximum optimization)
-- `/arch:AVX2` on Windows (MSVC)
+- `-march=native` on Linux/macOS/Windows (clang-cl) for maximum optimization
+- `/arch:AVX2` on Windows (MSVC only)
 - `-O3` optimization level
 
 ## Usage
@@ -60,11 +66,15 @@ The disassembler will output a formatted table showing:
 ### Run Tests
 
 ```bash
-# Run with verbose output
+# Linux/macOS
 ctest --test-dir build --verbose
 
+# Windows (with Visual Studio generator)
+ctest --test-dir build -C Release --verbose
+
 # Or run test binary directly
-./build/bin/test_disasm
+./build/bin/test_disasm              # Linux/macOS
+.\build\bin\Release\test_disasm.exe  # Windows
 ```
 
 The test suite covers all 256+ Game Boy instructions with complete register and bit position coverage.
@@ -109,7 +119,7 @@ struct Instruction {
 
 - Uses `std::print` for formatted output
 - Cross-platform file handling with `std::filesystem`
-- Optimized builds with `-march=native` (Linux/macOS) or `/arch:AVX2` (Windows)
+- Optimized builds with `-march=native` (Linux/macOS/Windows with clang-cl) or `/arch:AVX2` (Windows with MSVC)
 
 ## Testing
 

@@ -12,7 +12,11 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Add march=native flag for all platforms
-if(MSVC)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
+    # clang-cl supports -march=native on Windows
+    add_compile_options(-march=native -O3)
+elseif(MSVC)
+    # Regular MSVC uses /arch:AVX2
     add_compile_options(/arch:AVX2 /O2)
 else()
     add_compile_options(-march=native -O3)
@@ -46,7 +50,11 @@ set_tests_properties(disassembler_test PROPERTIES FAIL_REGULAR_EXPRESSION "Error
 if(APPLE)
     message(STATUS "Building for macOS with -march=native")
 elseif(WIN32)
-    message(STATUS "Building for Windows with /arch:AVX2")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
+        message(STATUS "Building for Windows with clang-cl using -march=native")
+    else()
+        message(STATUS "Building for Windows with MSVC using /arch:AVX2")
+    endif()
     if(MSVC)
         target_compile_options(gbemu PRIVATE /W4)
         target_compile_options(test_disasm PRIVATE /W4)
