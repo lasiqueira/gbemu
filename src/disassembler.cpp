@@ -80,11 +80,10 @@ namespace disassembler
                 cycles_str = std::format("{}", cycles);
             }
 
-            return std::format("{:04X}  {:20s}  {:8s}  {:6s}  {:3d}  {:5s}",
+            return std::format("{:04X}  {:20s}  {:8s}  {:3d}  {:5s}",
                                address,
                                display_instr,
                                flags_str,
-                               "",
                                length,
                                cycles_str);
         }
@@ -383,8 +382,8 @@ namespace disassembler
     void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr = 0, size_t end_addr = 0)
     {
         std::println("Disassembly:");
-        std::println("Addr  Instruction           Flags     Regs   Len  Cycles");
-        std::println("----  --------------------  --------  -----  ---  ------");
+        std::println("Addr  Instruction           Flags     Len  Cycles");
+        std::println("----  --------------------  --------  ---  ------");
 
         if (end_addr == 0 || end_addr > rom.size())
         {
