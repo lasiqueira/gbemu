@@ -126,29 +126,29 @@ while (pc &lt; rom.size()) {
                 embedded in the code section (like strings, graphics data, or constants). A 
                 disassembler can't always tell the difference between code and data!
             </p>
-            <pre><code>Addr  Instruction           Flags     Regs   Len  Cycles
-----  --------------------  --------  -----  ---  ------
-0100  NOP                   -                   1  4    
-0101  JP $0150              -                   3  16   
+            <pre><code>Addr  Instruction           Flags       Len  Cycles
+----  --------------------  --------    ---  ------
+0100  NOP                   -             1  4    
+0101  JP $0150              -             3  16   
 ...
-0120  UNKNOWN               -                   1  4    
-0121  UNKNOWN               -                   1  4    
-0122  RETI                  -                   1  16   
-0123  SBC A, C              Z,1,H,C             1  4    
+0120  UNKNOWN               -             1  4    
+0121  UNKNOWN               -             1  4    
+0122  RETI                  -             1  16   
+0123  SBC A, C              Z,1,H,C       1  4    
 ...
-0150  JP $09DA              -                   3  16   
-0153  LDH A, (a8)           -                   2  12   
-0155  PUSH AF               -                   1  16   
-0156  LD $03                -                   2  8    
-0158  LDH (a8), A           -                   2  12   
-015A  LD $2000              -                   3  16   
-015D  CALL $4000            -                   3  24   
-0160  POP AF                -                   1  12   
-0161  LDH (a8), A           -                   2  12   
-0163  LD $2000              -                   3  16   
-0166  RET                   -                   1  16   
-0167  XOR A                 Z,0,0,0             1  4    
-0168  LDH (a8), A           -                   2  12</code></pre>
+0150  JP $09DA              -             3  16   
+0153  LDH A, (a8)           -             2  12   
+0155  PUSH AF               -             1  16   
+0156  LD $03                -             2  8    
+0158  LDH (a8), A           -             2  12   
+015A  LD $2000              -             3  16   
+015D  CALL $4000            -             3  24   
+0160  POP AF                -             1  12   
+0161  LDH (a8), A           -             2  12   
+0163  LD $2000              -             3  16   
+0166  RET                   -             1  16   
+0167  XOR A                 Z,0,0,0       1  4    
+0168  LDH (a8), A           -             2  12</code></pre>
 
             <h3>Full Implementation</h3>
             <p>
