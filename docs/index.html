@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Boy Emulator - Introduction</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <span class="current">Introduction</span>
+        <a href="disassembly.html">Next →</a>
+    </nav>
+
+    <main>
+        <article class="content">
+            <h2>Introduction</h2>
+            <p>
+                Welcome to the development log for my Game Boy emulator project! 
+                This project is a journey into understanding how the classic Game Boy hardware works 
+                by building a cycle-accurate emulator in C++.
+            </p>
+
+            <h3>Project Goals</h3>
+            <ul>
+                <li>Build a fully functional Game Boy emulator from scratch</li>
+                <li>Learn about CPU architecture, memory management, and hardware emulation</li>
+                <li>Document the development process for others to learn from</li>
+            </ul>
+
+            <h3>What You Need to Write an Emulator</h3>
+            <p>
+                The topics related to emulation can go quite deep, but to start with simple systems 
+                all you really need is some basic computer architecture knowledge, documentation and a 
+                somewhat fast programming language.
+            </p>
+
+            <h4>Computer Architecture</h4>
+            <p>
+                I will probably cover some things when absolutely necessary, but the gist of it is 
+                knowing a bit of how a CPU works. Things like how registers store data, how instructions 
+                are fetched and executed, and how memory is addressed.
+            </p>
+
+            <h4>Documentation</h4>
+            <p>
+                The best documentation on Game Boy is the <a href="https://gbdev.io/pandocs/" target="_blank">pandocs</a>. 
+                If you get stuck, looking at other emulator implementations can help you understand different 
+                approaches to solving problems.
+            </p>
+
+            <h4>Programming Language</h4>
+            <p>
+                The older the system is the more leeway you have with the programming language speed. 
+                I also prefer programming languages that allow you to use unsigned integers as that 
+                better represents what the hardware is capable of.
+            </p>
+            <p>
+                Let's say you have a 16-bit address space, this would mean addresses from 0 to 65,535, 
+                which is the maximum value of an unsigned 16-bit integer, as opposed to a range of 
+                -32,768 to 32,767. You can just use a 32-bit integer to access the values, but I think 
+                it's a bit easier with unsigned integers.
+            </p>
+            <p>
+                For this project I will be using <strong>C++</strong>, with a disclaimer that I'm not a C++ 
+                programmer and my code might end up not being idiomatic. Plain old C is a perfect language 
+                for this kind of project but I want to learn C++ at some point as most modern emulators 
+                are written in it, so I might as well use it.
+            </p>
+
+            <h3>Development Timeline</h3>
+            <ul>
+                <li><strong>Phase 1:</strong> Disassembler - Understanding the instruction set</li>
+                <li><strong>Phase 2:</strong> CPU - Implementing the Sharp LR35902 processor</li>
+                <li><strong>Phase 3:</strong> Memory & Cartridges - Memory mapping and ROM loading</li>
+                <li><strong>Phase 4:</strong> Graphics - PPU and rendering</li>
+                <li><strong>Phase 5:</strong> Input & Audio - Joypad and sound processing</li>
+            </ul>
+
+            <h3>Table of Contents</h3>
+            <div class="toc">
+                <div class="toc-item">
+                    <span class="toc-number">1.</span>
+                    <a href="index.html" class="toc-link current-page">Introduction</a>
+                    <span class="toc-status complete">You are here</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">2.</span>
+                    <a href="disassembly.html" class="toc-link">Disassembly</a>
+                    <span class="toc-status complete">Complete</span>
+                </div>
+                <!-- Add more sections as you create them:
+                <div class="toc-item">
+                    <span class="toc-number">3.</span>
+                    <a href="cpu.html" class="toc-link">CPU Part 1</a>
+                    <span class="toc-status upcoming">Coming Soon</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">4.</span>
+                    <a href="memory.html" class="toc-link">Memory & Cartridges</a>
+                    <span class="toc-status upcoming">Coming Soon</span>
+                </div>
+                -->
+            </div>
+
+            <h3>Getting Started</h3>
+            <p>
+                Navigate through the sections using the links above or the table of contents to follow along with each phase of development.
+            </p>
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <span></span>
+        <a href="disassembly.html">Next: Disassembly →</a>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/YOUR_USERNAME/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>

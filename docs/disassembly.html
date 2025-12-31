@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Boy Emulator - Disassembly</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="index.html">← Introduction</a>
+        <span class="current">Disassembly</span>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <main>
+        <article class="content">
+            <h2>Disassembly</h2>
+            <p><em>Understanding the Game Boy instruction set</em></p>
+
+            <h3>Why Start with a Disassembler?</h3>
+            <p>
+                The advantages of starting with a disassembler is that it can help you to find bugs 
+                during the implementation process, or help you implement just enough to run that one 
+                game that you are interested in.
+            </p>
+
+            <h3>What Does a Disassembler Do?</h3>
+            <p>
+                It basically reads the program and prints the Assembly code that corresponds to that 
+                particular Opcode that you are reading. Yes, Assembly. But trust me, assembly is not 
+                all that hard to read. Just remember that each CPU architecture has its own flavour of 
+                assembly, but many have the same or similar functionalities, so knowing how to read 
+                Intel 8080 assembly has some carry over to x86 assembly for example.
+            </p>
+
+            <h3>What is an Opcode?</h3>
+            <p>
+                As for the Opcode itself, it's the operation the CPU will execute. Essentially your 
+                compiled code generates the opcodes in the binary and the CPU will know what it needs 
+                to do based on that.
+            </p>
+
+            <h3>The Opcode Table</h3>
+            <p>
+                So in order to get the disassembler done, we need an Opcode table. Thankfully pandocs 
+                has one: <a href="https://gbdev.io/gb-opcodes//optables/" target="_blank">GB Opcodes</a>.
+            </p>
+            <p>
+                This table has a lot of information but for now we are mainly interested in what's 
+                inside each of these squares.
+            </p>
+            <p>
+                There we can find what the Opcode does, how many bytes it is, how many cycles, what 
+                registers are involved and which flags are affected. The Opcode is represented in 
+                hexadecimal (0x00 to 0xFF). This is one byte, and if the Opcode is longer than that 
+                you will need to get the next byte or two from the buffer in order to complete the 
+                instruction.
+            </p>
+
+            <h3>Implementation Approach</h3>
+            <p>
+                So to implement the disassembler we loop over the buffer byte by byte, and output 
+                the assembly to the console.
+            </p>
+
+            <h4>Reading the ROM</h4>
+            <p>First, we need to read the ROM file into a buffer:</p>
+            <pre><code>// Open the ROM file in binary mode
+std::ifstream file(filename, std::ios::binary);
+
+// Get the file size
+file.seekg(0, std::ios::end);
+size_t size = file.tellg();
+file.seekg(0, std::ios::beg);
+
+// Read into buffer
+std::vector&lt;uint8_t&gt; rom(size);
+file.read(reinterpret_cast&lt;char*&gt;(rom.data()), size);</code></pre>
+
+            <h4>The Decode Loop</h4>
+            <p>Then we loop through the ROM, decoding each instruction:</p>
+            <pre><code>uint16_t pc = 0;  // Program counter
+
+while (pc &lt; rom.size()) {
+    uint8_t opcode = rom[pc];
+    
+    // Decode the opcode
+    switch (opcode) {
+        case 0x00:
+            printf("0x%04X: NOP\n", pc);
+            pc += 1;
+            break;
+        case 0xC3:  // JP nn
+            uint16_t addr = rom[pc+1] | (rom[pc+2] &lt;&lt; 8);
+            printf("0x%04X: JP 0x%04X\n", pc, addr);
+            pc += 3;
+            break;
+        // ... handle other opcodes
+    }
+}</code></pre>
+
+            <p>
+                Notice how different instructions have different lengths. Single-byte instructions 
+                like <code>NOP</code> only increment the program counter by 1, while 3-byte 
+                instructions like <code>JP</code> need to read two more bytes and increment by 3.
+            </p>
+            
+            <h4>Example Output</h4>
+            <p>Here's what disassembled output looks like:</p>
+            <pre><code>0x0100: NOP
+0x0101: JP 0x0150
+0x0104: LD SP, 0xFFFE
+0x0107: XOR A
+0x0108: LD HL, 0x9FFF</code></pre>
+
+            <h4>Real Disassembler Output</h4>
+            <p>
+                Here's a snippet from my actual disassembler running on a real ROM. Notice the 
+                <code>UNKNOWN</code> entries - these aren't invalid opcodes, but rather data 
+                embedded in the code section (like strings, graphics data, or constants). A 
+                disassembler can't always tell the difference between code and data!
+            </p>
+            <pre><code>Addr  Instruction           Flags     Regs   Len  Cycles
+----  --------------------  --------  -----  ---  ------
+0100  NOP                   -                   1  4    
+0101  JP $0150              -                   3  16   
+...
+0120  UNKNOWN               -                   1  4    
+0121  UNKNOWN               -                   1  4    
+0122  RETI                  -                   1  16   
+0123  SBC A, C              Z,1,H,C             1  4    
+...
+0150  JP $09DA              -                   3  16   
+0153  LDH A, (a8)           -                   2  12   
+0155  PUSH AF               -                   1  16   
+0156  LD $03                -                   2  8    
+0158  LDH (a8), A           -                   2  12   
+015A  LD $2000              -                   3  16   
+015D  CALL $4000            -                   3  24   
+0160  POP AF                -                   1  12   
+0161  LDH (a8), A           -                   2  12   
+0163  LD $2000              -                   3  16   
+0166  RET                   -                   1  16   
+0167  XOR A                 Z,0,0,0             1  4    
+0168  LDH (a8), A           -                   2  12</code></pre>
+
+            <h3>Full Implementation</h3>
+            <p>
+                The code snippets above are simplified for educational purposes. The full disassembler 
+                implementation can be found on the 
+                <a href="https://github.com/la/gbemu/tree/disassembly" target="_blank">disassembly branch</a>.
+            </p>
+
+            <!-- Add your development log entries here -->
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <a href="index.html">← Previous: Introduction</a>
+        <span></span>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>
