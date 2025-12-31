@@ -11,8 +11,8 @@ namespace disassembler
         std::string operands;
         std::vector<std::string> affected_flags;
         uint8_t length;
-        uint8_t cycles;
-        uint8_t cycles_taken; // For conditional instructions
+        uint8_t cycles;              // Base cycles (when branch not taken, or single value for non-conditional)
+        uint8_t cycles_branch_taken; // Cycles when conditional branch/action is taken
 
         std::string format(uint16_t address, const uint8_t *bytes) const
         {
@@ -25,15 +25,15 @@ namespace disassembler
 
             // Format operands with actual values from bytes
             std::string formatted_operands = operands;
-            if (length == 2 && formatted_operands.find("d8") != std::string::npos)
+            if (length == 2 && formatted_operands.find("n8") != std::string::npos)
             {
                 formatted_operands = std::format("${:02X}", bytes[1]);
             }
-            else if (length == 2 && formatted_operands.find("r8") != std::string::npos)
+            else if (length == 2 && formatted_operands.find("e8") != std::string::npos)
             {
                 formatted_operands = std::format("${:02X}", static_cast<int8_t>(bytes[1]));
             }
-            else if (length == 3 && formatted_operands.find("d16") != std::string::npos)
+            else if (length == 3 && formatted_operands.find("n16") != std::string::npos)
             {
                 formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
             }
@@ -71,9 +71,9 @@ namespace disassembler
 
             // Build cycles string
             std::string cycles_str;
-            if (cycles_taken != cycles)
+            if (cycles_branch_taken != cycles)
             {
-                cycles_str = std::format("{}/{}", cycles_taken, cycles);
+                cycles_str = std::format("{}/{}", cycles_branch_taken, cycles);
             }
             else
             {
@@ -104,12 +104,12 @@ namespace disassembler
         switch (opcode)
         {
         case 0x00: return {"NOP", "", {}, 1, 4, 4};
-        case 0x01: return {"LD", "BC, d16", {}, 3, 12, 12};
+        case 0x01: return {"LD", "BC, n16", {}, 3, 12, 12};
         case 0x02: return {"LD", "(BC), A", {}, 1, 8, 8};
         case 0x03: return {"INC", "BC", {}, 1, 8, 8};
         case 0x04: return {"INC", "B", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x05: return {"DEC", "B", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x06: return {"LD", "B, d8", {}, 2, 8, 8};
+        case 0x06: return {"LD", "B, n8", {}, 2, 8, 8};
         case 0x07: return {"RLCA", "", {"0", "0", "0", "C"}, 1, 4, 4};
         case 0x08: return {"LD", "(a16), SP", {}, 3, 20, 20};
         case 0x09: return {"ADD", "HL, BC", {"-", "0", "H", "C"}, 1, 8, 8};
@@ -117,55 +117,55 @@ namespace disassembler
         case 0x0B: return {"DEC", "BC", {}, 1, 8, 8};
         case 0x0C: return {"INC", "C", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x0D: return {"DEC", "C", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x0E: return {"LD", "C, d8", {}, 2, 8, 8};
+        case 0x0E: return {"LD", "C, n8", {}, 2, 8, 8};
         case 0x0F: return {"RRCA", "", {"0", "0", "0", "C"}, 1, 4, 4};
         case 0x10: return {"STOP", "0", {}, 2, 4, 4};
-        case 0x11: return {"LD", "DE, d16", {}, 3, 12, 12};
+        case 0x11: return {"LD", "DE, n16", {}, 3, 12, 12};
         case 0x12: return {"LD", "(DE), A", {}, 1, 8, 8};
         case 0x13: return {"INC", "DE", {}, 1, 8, 8};
         case 0x14: return {"INC", "D", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x15: return {"DEC", "D", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x16: return {"LD", "D, d8", {}, 2, 8, 8};
+        case 0x16: return {"LD", "D, n8", {}, 2, 8, 8};
         case 0x17: return {"RLA", "", {"0", "0", "0", "C"}, 1, 4, 4};
-        case 0x18: return {"JR", "r8", {}, 2, 12, 8};
+        case 0x18: return {"JR", "e8", {}, 2, 12, 12};
         case 0x19: return {"ADD", "HL, DE", {"-", "0", "H", "C"}, 1, 8, 8};
         case 0x1A: return {"LD", "A, (DE)", {}, 1, 8, 8};
         case 0x1B: return {"DEC", "DE", {}, 1, 8, 8};
         case 0x1C: return {"INC", "E", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x1D: return {"DEC", "E", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x1E: return {"LD", "E, d8", {}, 2, 8, 8};
+        case 0x1E: return {"LD", "E, n8", {}, 2, 8, 8};
         case 0x1F: return {"RRA", "", {"0", "0", "0", "C"}, 1, 4, 4};
-        case 0x20: return {"JR", "NZ, r8", {}, 2, 12, 8};
-        case 0x21: return {"LD", "HL, d16", {}, 3, 12, 12};
+        case 0x20: return {"JR", "NZ, e8", {}, 2, 8, 12};
+        case 0x21: return {"LD", "HL, n16", {}, 3, 12, 12};
         case 0x22: return {"LD", "(HL+), A", {}, 1, 8, 8};
         case 0x23: return {"INC", "HL", {}, 1, 8, 8};
         case 0x24: return {"INC", "H", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x25: return {"DEC", "H", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x26: return {"LD", "H, d8", {}, 2, 8, 8};
+        case 0x26: return {"LD", "H, n8", {}, 2, 8, 8};
         case 0x27: return {"DAA", "", {"Z", "-", "H", "C"}, 1, 4, 4};
-        case 0x28: return {"JR", "Z, r8", {}, 2, 12, 8};
+        case 0x28: return {"JR", "Z, e8", {}, 2, 8, 12};
         case 0x29: return {"ADD", "HL, HL", {"-", "0", "H", "C"}, 1, 8, 8};
         case 0x2A: return {"LD", "A, (HL+)", {}, 1, 8, 8};
         case 0x2B: return {"DEC", "HL", {}, 1, 8, 8};
         case 0x2C: return {"INC", "L", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x2D: return {"DEC", "L", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x2E: return {"LD", "L, d8", {}, 2, 8, 8};
+        case 0x2E: return {"LD", "L, n8", {}, 2, 8, 8};
         case 0x2F: return {"CPL", "", {"-", "1", "1", "-"}, 1, 4, 4};
-        case 0x30: return {"JR", "NC, r8", {}, 2, 12, 8};
-        case 0x31: return {"LD", "SP, d16", {}, 3, 12, 12};
+        case 0x30: return {"JR", "NC, e8", {}, 2, 8, 12};
+        case 0x31: return {"LD", "SP, n16", {}, 3, 12, 12};
         case 0x32: return {"LD", "(HL-), A", {}, 1, 8, 8};
         case 0x33: return {"INC", "SP", {}, 1, 8, 8};
         case 0x34: return {"INC", "(HL)", {"Z", "0", "H", "-"}, 1, 12, 12};
         case 0x35: return {"DEC", "(HL)", {"Z", "1", "H", "-"}, 1, 12, 12};
-        case 0x36: return {"LD", "(HL), d8", {}, 2, 12, 12};
+        case 0x36: return {"LD", "(HL), n8", {}, 2, 12, 12};
         case 0x37: return {"SCF", "", {"-", "0", "0", "1"}, 1, 4, 4};
-        case 0x38: return {"JR", "C, r8", {}, 2, 12, 8};
+        case 0x38: return {"JR", "C, e8", {}, 2, 8, 12};
         case 0x39: return {"ADD", "HL, SP", {"-", "0", "H", "C"}, 1, 8, 8};
         case 0x3A: return {"LD", "A, (HL-)", {}, 1, 8, 8};
         case 0x3B: return {"DEC", "SP", {}, 1, 8, 8};
         case 0x3C: return {"INC", "A", {"Z", "0", "H", "-"}, 1, 4, 4};
         case 0x3D: return {"DEC", "A", {"Z", "1", "H", "-"}, 1, 4, 4};
-        case 0x3E: return {"LD", "A, d8", {}, 2, 8, 8};
+        case 0x3E: return {"LD", "A, n8", {}, 2, 8, 8};
         case 0x3F: return {"CCF", "", {"-", "0", "0", "C"}, 1, 4, 4};
         case 0x40: return {"LD", "B, B", {}, 1, 4, 4};
         case 0x41: return {"LD", "B, C", {}, 1, 4, 4};
@@ -295,58 +295,58 @@ namespace disassembler
         case 0xBD: return {"CP", "L", {"Z", "1", "H", "C"}, 1, 4, 4};
         case 0xBE: return {"CP", "(HL)", {"Z", "1", "H", "C"}, 1, 8, 8};
         case 0xBF: return {"CP", "A", {"Z", "1", "H", "C"}, 1, 4, 4};
-        case 0xC0: return {"RET", "NZ", {}, 1, 20, 8};
+        case 0xC0: return {"RET", "NZ", {}, 1, 8, 20};
         case 0xC1: return {"POP", "BC", {}, 1, 12, 12};
-        case 0xC2: return {"JP", "NZ, a16", {}, 3, 16, 12};
+        case 0xC2: return {"JP", "NZ, a16", {}, 3, 12, 16};
         case 0xC3: return {"JP", "a16", {}, 3, 16, 16};
-        case 0xC4: return {"CALL", "NZ, a16", {}, 3, 24, 12};
+        case 0xC4: return {"CALL", "NZ, a16", {}, 3, 12, 24};
         case 0xC5: return {"PUSH", "BC", {}, 1, 16, 16};
-        case 0xC6: return {"ADD", "A, d8", {"Z", "0", "H", "C"}, 2, 8, 8};
+        case 0xC6: return {"ADD", "A, n8", {"Z", "0", "H", "C"}, 2, 8, 8};
         case 0xC7: return {"RST", "00H", {}, 1, 16, 16};
-        case 0xC8: return {"RET", "Z", {}, 1, 20, 8};
+        case 0xC8: return {"RET", "Z", {}, 1, 8, 20};
         case 0xC9: return {"RET", "", {}, 1, 16, 16};
-        case 0xCA: return {"JP", "Z, a16", {}, 3, 16, 12};
+        case 0xCA: return {"JP", "Z, a16", {}, 3, 12, 16};
         case 0xCB: return (available > 1) ? decode_cb_instruction(bytes[1]) : Instruction{"UNKNOWN", "", {}, 1, 4, 4};
-        case 0xCC: return {"CALL", "Z, a16", {}, 3, 24, 12};
+        case 0xCC: return {"CALL", "Z, a16", {}, 3, 12, 24};
         case 0xCD: return {"CALL", "a16", {}, 3, 24, 24};
-        case 0xCE: return {"ADC", "A, d8", {"Z", "0", "H", "C"}, 2, 8, 8};
+        case 0xCE: return {"ADC", "A, n8", {"Z", "0", "H", "C"}, 2, 8, 8};
         case 0xCF: return {"RST", "08H", {}, 1, 16, 16};
-        case 0xD0: return {"RET", "NC", {}, 1, 20, 8};
+        case 0xD0: return {"RET", "NC", {}, 1, 8, 20};
         case 0xD1: return {"POP", "DE", {}, 1, 12, 12};
-        case 0xD2: return {"JP", "NC, a16", {}, 3, 16, 12};
-        case 0xD4: return {"CALL", "NC, a16", {}, 3, 24, 12};
+        case 0xD2: return {"JP", "NC, a16", {}, 3, 12, 16};
+        case 0xD4: return {"CALL", "NC, a16", {}, 3, 12, 24};
         case 0xD5: return {"PUSH", "DE", {}, 1, 16, 16};
-        case 0xD6: return {"SUB", "d8", {"Z", "1", "H", "C"}, 2, 8, 8};
+        case 0xD6: return {"SUB", "n8", {"Z", "1", "H", "C"}, 2, 8, 8};
         case 0xD7: return {"RST", "10H", {}, 1, 16, 16};
-        case 0xD8: return {"RET", "C", {}, 1, 20, 8};
+        case 0xD8: return {"RET", "C", {}, 1, 8, 20};
         case 0xD9: return {"RETI", "", {}, 1, 16, 16};
-        case 0xDA: return {"JP", "C, a16", {}, 3, 16, 12};
-        case 0xDC: return {"CALL", "C, a16", {}, 3, 24, 12};
-        case 0xDE: return {"SBC", "A, d8", {"Z", "1", "H", "C"}, 2, 8, 8};
+        case 0xDA: return {"JP", "C, a16", {}, 3, 12, 16};
+        case 0xDC: return {"CALL", "C, a16", {}, 3, 12, 24};
+        case 0xDE: return {"SBC", "A, n8", {"Z", "1", "H", "C"}, 2, 8, 8};
         case 0xDF: return {"RST", "18H", {}, 1, 16, 16};
         case 0xE0: return {"LDH", "(a8), A", {}, 2, 12, 12};
         case 0xE1: return {"POP", "HL", {}, 1, 12, 12};
         case 0xE2: return {"LD", "(C), A", {}, 1, 8, 8};
         case 0xE5: return {"PUSH", "HL", {}, 1, 16, 16};
-        case 0xE6: return {"AND", "d8", {"Z", "0", "1", "0"}, 2, 8, 8};
+        case 0xE6: return {"AND", "n8", {"Z", "0", "1", "0"}, 2, 8, 8};
         case 0xE7: return {"RST", "20H", {}, 1, 16, 16};
-        case 0xE8: return {"ADD", "SP, r8", {"0", "0", "H", "C"}, 2, 16, 16};
+        case 0xE8: return {"ADD", "SP, e8", {"0", "0", "H", "C"}, 2, 16, 16};
         case 0xE9: return {"JP", "(HL)", {}, 1, 4, 4};
         case 0xEA: return {"LD", "(a16), A", {}, 3, 16, 16};
-        case 0xEE: return {"XOR", "d8", {"Z", "0", "0", "0"}, 2, 8, 8};
+        case 0xEE: return {"XOR", "n8", {"Z", "0", "0", "0"}, 2, 8, 8};
         case 0xEF: return {"RST", "28H", {}, 1, 16, 16};
         case 0xF0: return {"LDH", "A, (a8)", {}, 2, 12, 12};
         case 0xF1: return {"POP", "AF", {}, 1, 12, 12};
         case 0xF2: return {"LD", "A, (C)", {}, 1, 8, 8};
         case 0xF3: return {"DI", "", {}, 1, 4, 4};
         case 0xF5: return {"PUSH", "AF", {}, 1, 16, 16};
-        case 0xF6: return {"OR", "d8", {"Z", "0", "0", "0"}, 2, 8, 8};
+        case 0xF6: return {"OR", "n8", {"Z", "0", "0", "0"}, 2, 8, 8};
         case 0xF7: return {"RST", "30H", {}, 1, 16, 16};
-        case 0xF8: return {"LD", "HL, SP+r8", {"0", "0", "H", "C"}, 2, 12, 12};
+        case 0xF8: return {"LD", "HL, SP+e8", {"0", "0", "H", "C"}, 2, 12, 12};
         case 0xF9: return {"LD", "SP, HL", {}, 1, 8, 8};
         case 0xFA: return {"LD", "A, (a16)", {}, 3, 16, 16};
         case 0xFB: return {"EI", "", {}, 1, 4, 4};
-        case 0xFE: return {"CP", "d8", {"Z", "1", "H", "C"}, 2, 8, 8};
+        case 0xFE: return {"CP", "n8", {"Z", "1", "H", "C"}, 2, 8, 8};
         case 0xFF: return {"RST", "38H", {}, 1, 16, 16};
         default: return {"UNKNOWN", "", {}, 1, 4, 4};
         }
