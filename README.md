@@ -137,16 +137,16 @@ Total test coverage: 630+ bytes covering 350+ unique instructions
 ## Example Output
 
 ```
-Addr  Instruction           Flags     Regs   Len  Cycles
-----  --------------------  --------  -----  ---  ------
-0000  NOP                   -                   1  4    
-0001  LD $1234              -                   3  12   
-0004  LD B, B               -                   1  4    
-0005  ADD A, B              Z,0,H,C             1  4    
-0079  RLC B                 Z,0,0,C             2  8    
-00F9  BIT 0, B              Z,0,1,-             2  8    
-0179  RES 0, B              -                   2  8    
-01F9  SET 0, B              -                   2  8    
+Addr  Instruction           Flags       Len  Cycles
+----  --------------------  --------    ---  ------
+0000  NOP                   -             1  4    
+0001  LD $1234              -             3  12   
+0004  LD B, B               -             1  4    
+0005  ADD A, B              Z,0,H,C       1  4    
+0079  RLC B                 Z,0,0,C       2  8    
+00F9  BIT 0, B              Z,0,1,-       2  8    
+0179  RES 0, B              -             2  8    
+01F9  SET 0, B              -             2  8    
 ```
 
 ## Development
