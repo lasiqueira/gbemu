@@ -110,6 +110,14 @@ while (pc &lt; rom.size()) {
                 like <code>NOP</code> only increment the program counter by 1, while 3-byte 
                 instructions like <code>JP</code> need to read two more bytes and increment by 3.
             </p>
+
+            <p>
+                Another important aspect is handling multi-byte operands correctly. For example, the
+                <code>JP nn</code> instruction requires reading the next two bytes to form the 16-bit address operand.
+                To achieve this, we combine the bytes using bitwise operations: <code>addr = rom[pc+1] | (rom[pc+2] &lt;&lt; 8)</code>.
+
+                Because the <a href="https://en.wikipedia.org/wiki/Endianness" target="_blank">endianness</a> is little-endian, the lower byte comes first, followed by the higher byte. 
+            </p>
             
             <h4>Example Output</h4>
             <p>Here's what disassembled output looks like:</p>
