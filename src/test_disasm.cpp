@@ -1,5 +1,6 @@
-#include "disassembler.cpp"
+#include "disassembler.h"
 #include <vector>
+#include <cstdio>
 
 int main()
 {
@@ -228,10 +229,10 @@ int main()
         0xCB, 0xF8, 0xCB, 0xF9, 0xCB, 0xFA, 0xCB, 0xFB, 0xCB, 0xFC, 0xCB, 0xFD, 0xCB, 0xFE, 0xCB, 0xFF, // SET 7, B/C/D/E/H/L/(HL)/A
     };
 
-    std::println("Game Boy Disassembler Test");
-    std::println("Testing ALL {} bytes - Complete opcode coverage\n", rom.size());
-    std::println("Standard opcodes: ~121 bytes");
-    std::println("CB-prefixed opcodes: All 256 CB instructions (512 bytes)\n");
+    printf("Game Boy Disassembler Test\n");
+    printf("Testing ALL %zu bytes - Complete opcode coverage\n\n", rom.size());
+    printf("Standard opcodes: ~121 bytes\n");
+    printf("CB-prefixed opcodes: All 256 CB instructions (512 bytes)\n\n");
     disassembler::print_disassembly(rom, 0, 350);
 
     return 0;

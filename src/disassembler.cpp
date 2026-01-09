@@ -1,104 +1,117 @@
+#include "disassembler.h"
 #include <print>
-#include <string>
-#include <vector>
-#include <cstdint>
+#include <format>
+#include <algorithm>
 
 namespace disassembler
 {
-    struct Instruction
+    std::string Instruction::format(uint16_t address, const uint8_t *bytes) const
     {
-        std::string mnemonic;
-        std::string operands;
-        std::vector<std::string> affected_flags;
-        uint8_t length;
-        uint8_t cycles;              // Base cycles (when branch not taken, or single value for non-conditional)
-        uint8_t cycles_branch_taken; // Cycles when conditional branch/action is taken
-
-        std::string format(uint16_t address, const uint8_t *bytes) const
+        // Build full instruction string
+        std::string full_instr = mnemonic;
+        if (!operands.empty())
         {
-            // Build full instruction string
-            std::string full_instr = mnemonic;
-            if (!operands.empty())
-            {
-                full_instr += " " + operands;
-            }
-
-            // Format operands with actual values from bytes
-            std::string formatted_operands = operands;
-            if (length == 2 && formatted_operands.find("n8") != std::string::npos)
-            {
-                formatted_operands = std::format("${:02X}", bytes[1]);
-            }
-            else if (length == 2 && formatted_operands.find("e8") != std::string::npos)
-            {
-                formatted_operands = std::format("${:02X}", static_cast<int8_t>(bytes[1]));
-            }
-            else if (length == 3 && formatted_operands.find("n16") != std::string::npos)
-            {
-                formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
-            }
-            else if (length == 3 && formatted_operands.find("a16") != std::string::npos)
-            {
-                formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
-            }
-
-            // Build instruction with formatted operands
-            std::string display_instr = mnemonic;
-            if (!formatted_operands.empty() && formatted_operands != operands)
-            {
-                display_instr += " " + formatted_operands;
-            }
-            else if (!operands.empty())
-            {
-                display_instr += " " + operands;
-            }
-
-            // Build flags string
-            std::string flags_str;
-            if (!affected_flags.empty())
-            {
-                for (size_t i = 0; i < affected_flags.size(); ++i)
-                {
-                    flags_str += affected_flags[i];
-                    if (i < affected_flags.size() - 1)
-                        flags_str += ",";
-                }
-            }
-            else
-            {
-                flags_str = "-";
-            }
-
-            // Build cycles string
-            std::string cycles_str;
-            if (cycles_branch_taken != cycles)
-            {
-                cycles_str = std::format("{}/{}", cycles_branch_taken, cycles);
-            }
-            else
-            {
-                cycles_str = std::format("{}", cycles);
-            }
-
-            return std::format("{:04X}  {:20s}  {:8s}  {:3d}  {:5s}",
-                               address,
-                               display_instr,
-                               flags_str,
-                               length,
-                               cycles_str);
+            full_instr += " " + operands;
         }
 
-        void print(uint16_t address, const uint8_t *bytes) const
+        // Format operands with actual values from bytes
+        std::string formatted_operands = operands;
+        if (length == 2 && formatted_operands.find("n8") != std::string::npos)
         {
-            std::println("{}", format(address, bytes));
+            formatted_operands = std::format("${:02X}", bytes[1]);
         }
-    };
+        else if (length == 2 && formatted_operands.find("e8") != std::string::npos)
+        {
+            formatted_operands = std::format("${:02X}", static_cast<int8_t>(bytes[1]));
+        }
+        else if (length == 3 && formatted_operands.find("n16") != std::string::npos)
+        {
+            formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
+        }
+        else if (length == 3 && formatted_operands.find("a16") != std::string::npos)
+        {
+            formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
+        }
 
-    // Forward declaration
-    Instruction decode_cb_instruction(uint8_t opcode);
+        // Build instruction with formatted operands
+        std::string display_instr = mnemonic;
+        if (!formatted_operands.empty() && formatted_operands != operands)
+        {
+            display_instr += " " + formatted_operands;
+        }
+        else if (!operands.empty())
+        {
+            display_instr += " " + operands;
+        }
 
-    // Decode instruction from opcode
-    Instruction decode_instruction(const uint8_t* bytes, size_t available = 3)
+        // Build flags string
+        std::string flags_str;
+        if (!affected_flags.empty())
+        {
+            for (size_t i = 0; i < affected_flags.size(); ++i)
+            {
+                flags_str += affected_flags[i];
+                if (i < affected_flags.size() - 1)
+                    flags_str += ",";
+            }
+        }
+        else
+        {
+            flags_str = "-";
+        }
+
+        // Build cycles string
+        std::string cycles_str;
+        if (cycles_branch_taken != cycles)
+        {
+            cycles_str = std::format("{}/{}", cycles_branch_taken, cycles);
+        }
+        else
+        {
+            cycles_str = std::format("{}", cycles);
+        }
+
+        return std::format("{:04X}  {:20s}  {:8s}  {:3d}  {:5s}",
+                           address,
+                           display_instr,
+                           flags_str,
+                           length,
+                           cycles_str);
+    }
+
+    void Instruction::print(uint16_t address, const uint8_t *bytes) const
+    {
+        std::println("{}", format(address, bytes));
+    }
+
+    Instruction decode_cb_instruction(uint8_t opcode)
+    {
+        uint8_t reg = opcode & 0x07;
+        const char* reg_names[] = {"B", "C", "D", "E", "H", "L", "(HL)", "A"};
+        std::string r = reg_names[reg];
+        
+        // Cycles: most are 8, except (HL) operations are 16
+        uint8_t cycles = (reg == 6) ? 16 : 8;
+        
+        if (opcode < 0x08) return {"RLC", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x10) return {"RRC", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x18) return {"RL", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x20) return {"RR", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x28) return {"SLA", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x30) return {"SRA", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        if (opcode < 0x38) return {"SWAP", r, {"Z", "0", "0", "0"}, 2, cycles, cycles};
+        if (opcode < 0x40) return {"SRL", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
+        
+        // BIT/RES/SET instructions
+        uint8_t bit = (opcode >> 3) & 0x07;
+        std::string operands = std::format("{}, {}", bit, r);
+        
+        if (opcode < 0x80) return {"BIT", operands, {"Z", "0", "1", "-"}, 2, cycles, cycles};
+        if (opcode < 0xC0) return {"RES", operands, {}, 2, cycles, cycles};
+        return {"SET", operands, {}, 2, cycles, cycles};
+    }
+
+    Instruction decode_instruction(const uint8_t* bytes, size_t available)
     {
         uint8_t opcode = bytes[0];
         switch (opcode)
@@ -352,34 +365,7 @@ namespace disassembler
         }
     }
 
-    Instruction decode_cb_instruction(uint8_t opcode)
-{
-    uint8_t reg = opcode & 0x07;
-    const char* reg_names[] = {"B", "C", "D", "E", "H", "L", "(HL)", "A"};
-    std::string r = reg_names[reg];
-    
-    // Cycles: most are 8, except (HL) operations are 16
-    uint8_t cycles = (reg == 6) ? 16 : 8;
-    
-    if (opcode < 0x08) return {"RLC", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x10) return {"RRC", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x18) return {"RL", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x20) return {"RR", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x28) return {"SLA", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x30) return {"SRA", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    if (opcode < 0x38) return {"SWAP", r, {"Z", "0", "0", "0"}, 2, cycles, cycles};
-    if (opcode < 0x40) return {"SRL", r, {"Z", "0", "0", "C"}, 2, cycles, cycles};
-    
-    // BIT/RES/SET instructions
-    uint8_t bit = (opcode >> 3) & 0x07;
-    std::string operands = std::format("{}, {}", bit, r);
-    
-    if (opcode < 0x80) return {"BIT", operands, {"Z", "0", "1", "-"}, 2, cycles, cycles};
-    if (opcode < 0xC0) return {"RES", operands, {}, 2, cycles, cycles};
-    return {"SET", operands, {}, 2, cycles, cycles};
-}
-
-    void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr = 0, size_t end_addr = 0)
+    void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr, size_t end_addr)
     {
         std::println("Disassembly:");
         std::println("Addr  Instruction           Flags     Len  Cycles");
@@ -408,14 +394,13 @@ namespace disassembler
         }
     }
 
-    void disassemble_rom(const std::vector<uint8_t> &rom, size_t start_addr = 0x100, size_t end_addr = 0)
+    void disassemble_rom(const std::vector<uint8_t> &rom, size_t start_addr, size_t end_addr)
     {
         std::println("ROM size: {} bytes", rom.size());
         std::println("");
         print_disassembly(rom, start_addr, end_addr);
     }
 
-    // Debug helper: print a single instruction at PC
     void print_instruction_at(const std::vector<uint8_t> &memory, uint16_t pc)
     {
         if (pc >= memory.size())
@@ -429,7 +414,8 @@ namespace disassembler
         }
 
         Instruction instr = decode_instruction(bytes, available);
-
+        std::println("Addr  Instruction           Flags     Len  Cycles");
+        std::println("----  --------------------  --------  ---  ------");
         instr.print(pc, bytes);
     }
 }

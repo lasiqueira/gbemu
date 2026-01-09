@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU and Memory Architecture - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="disassembler.html">← Disassembler</a>
+        <span class="current">CPU & Memory</span>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>CPU and Memory Architecture</h2>
+        <p><em>Building the foundation of a Game Boy emulator</em></p>
+
+        <section>
+            <h2>Why Model the CPU in Code?</h2>
+            
+            <h3>What Does an Emulator Actually Do?</h3>
+            <p>An emulator's job is to trick software into thinking it's running on real hardware. The Game Boy hardware consists of a CPU, memory, graphics chip (PPU), sound chip (APU), and input controller. To emulate this, we need software representations of each component.</p>
+            
+            <p>The CPU is the heart of the system - it reads instructions from memory and executes them. Everything else (graphics, sound, input) is triggered by the CPU either directly or through memory-mapped I/O registers.</p>
+
+            <h3>How Do You Represent a CPU?</h3>
+            <p>At minimum, the CPU representation needs:</p>
+            <ul>
+                <li><strong>State:</strong> Registers (A, B, C, etc.), Program Counter (PC), Stack Pointer (SP), flags</li>
+                <li><strong>Behavior:</strong> A way to fetch, decode, and execute instructions</li>
+                <li><strong>Access to Memory:</strong> The CPU reads instructions and data from memory</li>
+            </ul>
+
+            <p>In code, this typically becomes a struct or class:</p>
+            <pre><code>struct CPU {
+    // State
+    uint8_t A, B, C, D, E, H, L, F;  // Registers
+    uint16_t PC, SP;                  // Program counter & stack pointer
+    
+    // Behavior
+    void step() {
+        uint8_t instruction = memory[PC];
+        execute(instruction);
+    }
+};</code></pre>
+
+            <h3>Why Not Just Execute Instructions Directly?</h3>
+            <p>You might wonder: "Why not just loop through memory and execute instructions without all this CPU structure?"</p>
+            
+            <p>The answer is <strong>state management</strong>. Instructions don't operate in isolation - they modify registers, check flags, jump to different addresses, and interact with each other. For example:</p>
+            <ul>
+                <li><code>ADD A, B</code> needs to read A and B, add them, store back in A, and set flags</li>
+                <li><code>JP Z, $150</code> needs to check if the Zero flag is set before jumping</li>
+                <li><code>CALL $200</code> needs to push PC onto the stack (using SP)</li>
+            </ul>
+            
+            <p>Without a CPU struct holding this state, you'd end up with a mess of global variables. The struct keeps everything organized and makes the emulator's architecture clear: one CPU, one memory system, and they interact through well-defined interfaces.</p>
+
+        
+
+        <section>
+            <h2>Understanding CPU Registers</h2>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/CPU_Registers_and_Flags.html" target="_blank">Pandocs - CPU Registers and Flags</a></em></p>
+            
+            <h3>What are Registers?</h3>
+            <p>Registers are small, fast storage locations inside the CPU. Think of them as the CPU's scratchpad - instead of constantly reading and writing to main memory (which is slow), the CPU keeps frequently-used values in registers for quick access.</p>
+            
+            <p>The Game Boy's CPU (Sharp LR35902, similar to the Z80) has several registers:</p>
+            <ul>
+                <li><strong>General purpose registers:</strong> A, B, C, D, E, H, L - Used for arithmetic, logic, and data movement</li>
+                <li><strong>Accumulator (A):</strong> The primary register for arithmetic operations</li>
+                <li><strong>Flag register (F):</strong> Stores the results of operations (zero, carry, etc.)</li>
+                <li><strong>Program Counter (PC):</strong> Points to the next instruction to execute</li>
+                <li><strong>Stack Pointer (SP):</strong> Points to the top of the stack in memory</li>
+            </ul>
+
+            <h3>8-bit and 16-bit Register Pairs</h3>
+            <p>Here's something interesting: some operations need 8 bits, others need 16 bits. The Game Boy handles this elegantly - certain registers can be used individually (8-bit) or combined into pairs (16-bit):</p>
+            <ul>
+                <li><strong>BC:</strong> B and C can be used separately, or together as a 16-bit value</li>
+                <li><strong>DE:</strong> D and E work the same way</li>
+                <li><strong>HL:</strong> H and L combine, often used for memory addresses</li>
+                <li><strong>AF:</strong> A (accumulator) and F (flags)</li>
+            </ul>
+            
+            <p>For example, if B=0x12 and C=0x34, then BC=0x1234. This dual-access pattern is crucial for 16-bit operations like memory addressing while maintaining 8-bit arithmetic compatibility.</p>
+
+            <h3>Implementing Registers</h3>
+            <p>The simplest implementation just uses individual variables:</p>
+            <pre><code>uint8_t A, B, C, D, E, H, L, F;
+uint16_t SP, PC;</code></pre>
+
+            <p>But when you need BC as 16-bit, you'd have to manually combine them: <code>uint16_t BC = (B << 8) | C;</code></p>
+            
+            <p>A better approach uses unions to access the same memory both ways:</p>
+            <pre><code>struct RegisterPair {
+    union {
+        struct { uint8_t low, high; };
+        uint16_t pair;
+    };
+};</code></pre>
+
+            <p>Now you can write <code>bc.high = 0x12; bc.low = 0x34;</code> and <code>bc.pair</code> automatically equals 0x1234. This zero-cost abstraction makes implementing instructions much cleaner.</p>
+
+            <h3>The Flag Register</h3>
+            <p>The F register is special - it's not used for general data storage. Instead, each bit represents the outcome of the last operation:</p>
+            <ul>
+                <li><strong>Bit 7 - Zero (Z):</strong> Was the result zero?</li>
+                <li><strong>Bit 6 - Subtract (N):</strong> Was it a subtraction? (Used for BCD adjustment)</li>
+                <li><strong>Bit 5 - Half Carry (H):</strong> Did bits 0-3 overflow into bit 4?</li>
+                <li><strong>Bit 4 - Carry (C):</strong> Did the result overflow past 8 bits?</li>
+                <li><strong>Bits 0-3:</strong> Always zero</li>
+            </ul>
+
+            <p>Instructions use these flags for conditional operations. For example, <code>JP Z, $150</code> means "jump to address $150 if the Zero flag is set."</p>
+            <p>Not all instructions affect flags, and those that affect them do not affect all flags. If you need a refresher you can check the disassembler output or the opcode table in pandocs</p>
+            <p>You can manipulate flags with bit operations:</p>
+            <pre><code>// Check if Zero flag is set
+bool is_zero = (F >> 7) & 1;
+
+// Set the Carry flag
+F |= (1 << 4);
+
+// Clear the Subtract flag
+F &= ~(1 << 6);</code></pre>
+        </section>
+
+        <section>
+            <h2>Understanding Memory</h2>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/Memory_Map.html" target="_blank">Pandocs - Memory Map</a></em></p>
+
+            <h3>The Address Space</h3>
+            <p>The Game Boy uses a 16-bit address bus, meaning it can address 2<sup>16</sup> = 65,536 bytes (64KB) of memory. But here's the clever part: the Game Boy doesn't actually have 64KB of physical RAM. Instead, different address ranges are mapped to different hardware components.</p>
+
+            <p>Think of the address space like a building with 65,536 numbered rooms. Some rooms connect to ROM storage, some to video memory, some to working RAM, and some to hardware registers that control the screen, sound, and input.</p>
+
+            <h3>Memory Map</h3>
+            <p>Here's how the Game Boy divides its address space:</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Address Range</th>
+                        <th>Description</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>$0000-$7FFF</td>
+                        <td>ROM (32KB)</td>
+                        <td>Game code and data from the cartridge</td>
+                    </tr>
+                    <tr>
+                        <td>$8000-$9FFF</td>
+                        <td>VRAM (8KB)</td>
+                        <td>Tiles and background maps for graphics</td>
+                    </tr>
+                    <tr>
+                        <td>$A000-$BFFF</td>
+                        <td>External RAM (8KB)</td>
+                        <td>Cartridge RAM for save data</td>
+                    </tr>
+                    <tr>
+                        <td>$C000-$DFFF</td>
+                        <td>Work RAM (8KB)</td>
+                        <td>General-purpose RAM for the game</td>
+                    </tr>
+                    <tr>
+                        <td>$E000-$FDFF</td>
+                        <td>Echo RAM</td>
+                        <td>Mirror of $C000-$DDFF (rarely used)</td>
+                    </tr>
+                    <tr>
+                        <td>$FE00-$FE9F</td>
+                        <td>OAM (160B)</td>
+                        <td>Sprite attribute table</td>
+                    </tr>
+                    <tr>
+                        <td>$FF00-$FF7F</td>
+                        <td>I/O Registers (128B)</td>
+                        <td>Control PPU, timers, sound, input</td>
+                    </tr>
+                    <tr>
+                        <td>$FF80-$FFFE</td>
+                        <td>High RAM (127B)</td>
+                        <td>Fast RAM, usable during DMA</td>
+                    </tr>
+                    <tr>
+                        <td>$FFFF</td>
+                        <td>IE Register (1B)</td>
+                        <td>Interrupt enable flags</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Implementing Memory Access</h3>
+            <p>To emulate this, you need a function that routes read/write requests to the correct storage based on the address. Here's the basic pattern:</p>
+            
+            <pre><code>uint8_t read(uint16_t address) {
+    if (address < 0x8000)
+        return rom[address];
+    else if (address < 0xA000)
+        return vram[address - 0x8000];
+    else if (address < 0xC000)
+        return external_ram[address - 0xA000];
+    // ... and so on for each region
+}</code></pre>
+
+            <p>The <code>address - offset</code> math converts the global address into an index for that specific memory array. For example, address $8100 is at index $100 (256) in the VRAM array.</p>
+
+            <h3>Why Not Just Use One Big Array?</h3>
+            <p>You could use <code>uint8_t memory[65536];</code> and simplify everything to <code>return memory[address];</code>. This works for simple cases, but:</p>
+            <ul>
+                <li>Some addresses are read-only (ROM)</li>
+                <li>Some trigger side effects (reading $FF00 updates joypad state)</li>
+                <li>Some addresses don't exist or return special values</li>
+                <li>Memory banking (for large ROMs) requires routing logic anyway</li>
+            </ul>
+            <p>Separate arrays give you control over each region's behavior.</p>
+        </section>
+
+        <section>
+            <h2>Putting It Together: The Fetch-Decode-Execute Cycle</h2>
+
+            <h3>How a CPU Works</h3>
+            <p>At its core, a CPU does three things in an endless loop:</p>
+            <ol>
+                <li><strong>Fetch:</strong> Read the instruction at the current PC (Program Counter)</li>
+                <li><strong>Decode:</strong> Figure out what the instruction means</li>
+                <li><strong>Execute:</strong> Perform the operation and update registers</li>
+            </ol>
+
+            <p>For example, if PC = $0100 and memory[$0100] = $3E (which is the opcode for "LD A, n"), the CPU fetches $3E, recognizes it means "load the next byte into register A", then reads memory[$0101] and stores it in A.</p>
+
+            <h3>Implementing execute_instruction()</h3>
+            <p>The heart of the emulator is the execute_instruction function that executes one instruction. With the GameBoy struct architecture, the CPU's execute_instruction() method takes memory as a parameter:</p>
+            
+            <pre><code>struct CPU {
+    uint8_t A, B, C, D, E, H, L, F;
+    uint16_t PC, SP;
+    
+    int execute_instruction(Memory& memory) {
+        uint8_t opcode = memory.read(PC);
+        
+        switch (opcode) {
+            case 0x00:  // NOP - do nothing
+                PC++;
+                return 4;  // Takes 4 clock cycles
+                
+            case 0x3E:  // LD A, n - load immediate value into A
+                A = memory.read(PC + 1);
+                PC += 2;  // Opcode + immediate byte
+                return 8;
+                
+            // ... 250+ more instructions
+        }
+    }
+};</code></pre>
+            <p>Note that it looks very similar to the disassembler's switch statement, except this time we are actually executing the instructions rather than just printing them.</p>
+            <p>Each instruction returns how many clock cycles it took. This is crucial for timing - not all instructions execute instantly.</p>
+
+            <h3>Timing and Synchronization</h3>
+            <p>The Game Boy's CPU runs at 4.194304 MHz (about 4 million cycles per second). At 59.7 frames per second, that's roughly 70,224 cycles per frame.</p>
+
+            <p>With the GameBoy struct, the main loop becomes clean and straightforward:</p>
+
+            <pre><code>GameBoy gameboy;
+gameboy.load_rom(rom_data);
+
+while (running) {
+    // Execute one frame worth of cycles
+    int cycles_this_frame = 0;
+    
+    while (cycles_this_frame < 70224) {
+        int cycles = gameboy.step();  // Executes one instruction
+        cycles_this_frame += cycles;
+        
+        // Update other components (when implemented)
+        // gameboy.ppu.update(gameboy.memory, cycles);
+        // gameboy.timer.update(cycles);
+    }
+    
+    // Render the completed frame
+    render_frame();
+}</code></pre>
+
+            <p>This cycle-accurate approach ensures everything stays synchronized, just like real hardware.</p>
+        </section>
+
+        <section>
+            <h2>Testing It Out</h2>
+            <p>With the basic structure in place, we can already test the emulator with a real ROM. Here's what happens when we run it:</p>
+            
+            <pre><code>Game Boy Emulator
+ROM loaded: 524288 bytes
+Starting emulation...
+
+Unimplemented instruction: 0xC3 at PC: 0x0101
+
+Addr  Instruction           Flags     Len  Cycles
+----  --------------------  --------  ---  ------
+0101  JP $0150              -           3  16
+
+CPU State:
+A: 0000  B: 0000  C: 0000  D: 0000  E: 0000  H: 0000  L: 0000  SP: FFFE  PC: 0101
+Flags: Z=false N=false H=false C=false</code></pre>
+
+            <p>Here the disassembler function proves useful showing which instruction was about to be executed when the emulator encountered an unimplemented opcode.</p>
+            <p> 
+                You could now for example implement the instructions as you find them, for a particular game.
+                This is a valid approach if you want to quickly get a specific game running, without implementing the full instruction set right away.
+            </p>
+        
+        </section>
+
+        <section>
+            <h2>What's Next?</h2>
+            <p>With CPU registers and memory in place, it's time to implement the full instruction set.</p>
+            <p></p>
+            
+        </section>
+
+        <section>
+            <h3>Full Implementation</h3>
+            <p>
+                The code snippets in this article are simplified for educational purposes. The full CPU and memory 
+                implementation can be found on the 
+                <a href="https://github.com/lasiqueira/gbemu/tree/cpu_and_memory" target="_blank">cpu_and_memory branch</a>.
+            </p>
+        </section>
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <a href="disassembler.html">← Disassembler</a>
+        <span></span>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>Confi

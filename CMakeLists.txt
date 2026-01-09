@@ -30,17 +30,22 @@ endif()
 # Enable testing
 enable_testing()
 
-# Create disassembler library
-add_library(disassembler_lib INTERFACE)
-target_include_directories(disassembler_lib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Core library with implementation files
+add_library(gbemu_core 
+    src/cpu.cpp
+    src/memory.cpp
+    src/gameboy.cpp
+    src/disassembler.cpp
+)
+target_include_directories(gbemu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Main executable
 add_executable(gbemu src/main.cpp)
-target_link_libraries(gbemu disassembler_lib)
+target_link_libraries(gbemu gbemu_core)
 
 # Test executable
 add_executable(test_disasm src/test_disasm.cpp)
-target_link_libraries(test_disasm disassembler_lib)
+target_link_libraries(test_disasm gbemu_core)
 
 # Register test
 add_test(NAME disassembler_test COMMAND test_disasm)

@@ -3,8 +3,7 @@
 #include <print>
 #include <filesystem>
 #include <iostream>
-#include "disassembler.cpp"
-
+#include "gameboy.h"
 
 int main(int argc, char** argv)
 {
@@ -48,7 +47,16 @@ int main(int argc, char** argv)
         return 1;
     }
     
-    disassembler::disassemble_rom(rom);
-
+    // Initialize Game Boy and load ROM
+    GameBoy gameboy;
+    gameboy.load_rom(rom);
+    
+    std::println("ROM loaded: {} bytes", rom.size());
+    std::println("Starting emulation...");
+    std::println("");
+    
+    // Run the emulator
+    gameboy.run();
+    
     return 0;
 }

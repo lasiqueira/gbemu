@@ -4,6 +4,20 @@ A Game Boy emulator implementation in C++ with a complete instruction disassembl
 
 ## Features
 
+- **CPU Emulation Core**
+  - Accurate Game Boy CPU (Sharp LR35902) emulation
+  - Complete register set (AF, BC, DE, HL, SP, PC)
+  - Flag register management (Z, N, H, C)
+  - Instruction execution with cycle-accurate timing
+  - Frame-based execution loop (~59.7 Hz)
+
+- **Memory Management**
+  - 64KB address space
+  - ROM loading support
+  - Cartridge memory mapping (0x0000-0x7FFF)
+  - Work RAM (0xC000-0xDFFF)
+  - High RAM (0xFF80-0xFFFE)
+
 - **Complete Game Boy Instruction Disassembler**
   - All 256 standard opcodes (0x00-0xFF)
   - All 256 CB-prefixed opcodes (0xCB00-0xCBFF)
@@ -87,7 +101,14 @@ The test suite covers all 256+ Game Boy instructions with complete register and 
 ├── .gitignore                  # Git ignore rules
 ├── src/
 │   ├── main.cpp               # Entry point (ROM loading)
-│   ├── disassembler.cpp       # Instruction disassembler
+│   ├── gameboy.h              # Game Boy system declarations
+│   ├── gameboy.cpp            # Game Boy system implementation
+│   ├── cpu.h                  # CPU declarations
+│   ├── cpu.cpp                # CPU implementation
+│   ├── memory.h               # Memory declarations
+│   ├── memory.cpp             # Memory implementation
+│   ├── disassembler.h         # Instruction disassembler declarations
+│   ├── disassembler.cpp       # Instruction disassembler implementation
 │   └── test_disasm.cpp        # Comprehensive test suite
 └── README.md                   # This file
 ```
@@ -115,9 +136,64 @@ struct Instruction {
 - `Instruction::format()`: Formats instruction with actual operand values
 - `print_disassembly()`: Batch disassembly with formatted output
 
+### CPU Emulation
+
+The CPU emulation uses a struct-based design with union register pairs for efficient 8-bit/16-bit access:
+
+```cpp
+struct CPU {
+    RegisterPair bc, de, hl, af;  // 8/16-bit register pairs
+    uint16_t sp, pc;               // Stack pointer, Program counter
+    
+    int execute(Memory& memory);   // Execute one instruction
+};
+```
+
+**Key Features:**
+- Register pairs use unions for dual 8-bit/16-bit access (e.g., `bc.high`, `bc.low`, `bc.pair`)
+- Flag register helpers for Z, N, H, C flags
+- Cycle-accurate instruction timing
+- Integration with disassembler for debugging unimplemented opcodes
+
+### Memory System
+
+The memory system provides a flat 64KB address space with proper region mapping:
+
+```cpp
+struct Memory {
+    std::vector<uint8_t> rom;      // Cartridge ROM (0x0000-0x7FFF)
+    std::array<uint8_t, 8192> wram; // Work RAM (0xC000-0xDFFF)
+    std::array<uint8_t, 127> hram;  // High RAM (0xFF80-0xFFFE)
+    
+    uint8_t read(uint16_t address);
+    void write(uint16_t address, uint8_t value);
+};
+```
+
+### Game Boy System
+
+The `GameBoy` struct integrates CPU and memory with timing control:
+
+```cpp
+struct GameBoy {
+    Memory memory;
+    cpu::CPU cpu;
+    
+    int step();                    // Execute one instruction
+    int step_frame();              // Execute one frame (~70224 cycles)
+    void run();                    // Main emulation loop
+};
+```
+
+**Timing Constants:**
+- CPU Frequency: 4.194304 MHz
+- Frame Rate: ~59.7 Hz
+- Cycles per Frame: ~70224
+
 ### Implementation Details
 
-- Uses `std::print` for formatted output
+- Uses C++23 features including `std::print` and `std::format` for formatted output
+- Modular design with separate header and implementation files
 - Cross-platform file handling with `std::filesystem`
 - Optimized builds with `-march=native` (Linux/macOS/Windows with clang-cl) or `/arch:AVX2` (Windows with MSVC)
 
@@ -159,12 +235,13 @@ Addr  Instruction           Flags       Len  Cycles
 
 ## Future Work
 
-- CPU emulation core
-- Memory management (RAM, VRAM, cartridge)
-- Interrupt handling
-- Graphics/PPU emulation
-- Sound/APU emulation
+- Additional CPU instruction implementations (currently only NOP is implemented)
+- Interrupt handling (IME, IE, IF registers)
+- Graphics/PPU emulation (LCD, sprites, background)
+- Sound/APU emulation (4 audio channels)
+- Input handling (joypad)
 - Debugger interface
+- Cartridge types (MBC1, MBC3, MBC5)
 
 ## License
 
