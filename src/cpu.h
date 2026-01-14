@@ -51,6 +51,11 @@ namespace cpu
         void print_state();
         void unimplemented_instruction(uint8_t opcode, const std::vector<uint8_t>& rom);
         int nop();
+        int jp_a16(uint16_t addr, bool condition = true);
+        int xor_a(uint8_t value, int extra_pc = 0, int extra_cycles = 0);
+        int ld_rr_n16(uint16_t& dest, uint16_t value);
+        int ld_r_n8(uint8_t& dest, uint8_t value);
+        int ld_hlp_a(Memory& memory, bool increment);
         
         // Execute one instruction, return cycles taken
         int execute_instruction(Memory& memory);
