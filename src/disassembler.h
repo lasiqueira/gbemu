@@ -23,5 +23,5 @@ namespace disassembler
     Instruction decode_instruction(const uint8_t* bytes, size_t available = 3);
     void print_disassembly(const std::vector<uint8_t> &rom, size_t start_addr = 0, size_t end_addr = 0);
     void disassemble_rom(const std::vector<uint8_t> &rom, size_t start_addr = 0x100, size_t end_addr = 0);
-    void print_instruction_at(const std::vector<uint8_t> &memory, uint16_t pc);
+    void print_instruction_at(const std::vector<uint8_t> &memory, uint16_t pc, bool print_header = true);
 }

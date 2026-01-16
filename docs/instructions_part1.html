@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementing CPU Instructions - Part 1 - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="cpu_and_memory.html">← CPU & Memory</a>
+        <span class="current">Instructions - Part 1</span>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>Implementing CPU Instructions - Part 1</h2>
+        <p><em>Building the instruction set one opcode at a time - From boot to VBlank</em></p>
+
+        <section>
+            <h2>The Journey Begins</h2>
+            <p>With the CPU and memory framework in place, we can now start implementing actual Game Boy instructions. The approach is simple: run the emulator with a real ROM (in this case, Tetris), and implement each instruction as we encounter it.</p>
+
+            <h3>First Steps</h3>
+            <p>Starting the emulator with Tetris, we immediately hit our first unimplemented instruction:</p>
+            
+            <pre><code>Game Boy Emulator
+ROM loaded: 32768 bytes
+Starting emulation...
+
+Unimplemented instruction: 0xC3 at PC: 0x0101
+
+Addr  Instruction           Flags     Len  Cycles
+----  --------------------  --------  ---  ------
+0101  JP $0150              -           3  16
+
+CPU State:
+A: 0000  B: 0000  C: 0000  D: 0000  E: 0000  H: 0000  L: 0000  SP: FFFE  PC: 0101
+Flags: Z=false N=false H=false C=false</code></pre>
+
+            <p>The very first instruction Tetris wants to execute is <code>JP $0150</code> - an unconditional jump to address 0x0150. This makes sense; the Game Boy ROM header occupies addresses 0x0100-0x014F, so games typically jump past it to start their actual code.</p>
+
+            <h3>Understanding Instructions</h3>
+            <p>If you have some familiarity with any assembly language family (x86, ARM, 6502, etc.), you'll find many Game Boy instructions similar to what you already know. Concepts like jumps, loads, arithmetic operations, and stack manipulation are universal across most CPU architectures. You can often implement instructions based on this prior experience.</p>
+
+            <p>However, if you have no experience with assembly language, don't worry! The <a href="https://rgbds.gbdev.io/docs/v1.0.1/gbz80.7" target="_blank">Game Boy CPU instruction set documentation</a> (part of Pan Docs) is an excellent resource. It explains what each instruction does, how it affects flags, how many cycles it takes, and what operands it expects. This documentation will be your guide for implementing each opcode correctly.</p>
+        </section>
+
+        <section>
+            <h2>Implementing JP (Jump)</h2>
+            
+            <h3>The Unconditional Jump</h3>
+            <p>The <code>JP a16</code> instruction (opcode 0xC3) is straightforward: set the program counter to the 16-bit address specified in the next two bytes.</p>
+
+            <pre><code>// cpu.h
+int jp_a16(uint16_t addr, bool condition = true);
+
+// cpu.cpp
+int CPU::jp_a16(uint16_t addr, bool condition) {
+    if (condition) {
+        pc = addr;
+        return 16; // JP takes 16 cycles if taken
+    } else {
+        pc += 3; // Move past the instruction and operands
+        return 12; // JP takes 12 cycles if not taken
+    }
+}</code></pre>
+
+            <p>Note that we added a <code>condition</code> parameter with a default value of <code>true</code>. This is forward-thinking design - the Game Boy has both unconditional jumps (<code>JP a16</code>) and conditional jumps (<code>JP Z, a16</code>, <code>JP NZ, a16</code>, etc.). By adding the condition parameter now, we can reuse this function for all jump variants.</p>
+
+            <h3>Extending to Conditional Jumps</h3>
+            <p>The Game Boy has five conditional jump instructions, all checking the flag register:</p>
+            <ul>
+                <li><code>JP NZ, a16</code> (0xC2) - Jump if Zero flag is NOT set</li>
+                <li><code>JP Z, a16</code> (0xCA) - Jump if Zero flag is set</li>
+                <li><code>JP NC, a16</code> (0xD2) - Jump if Carry flag is NOT set</li>
+                <li><code>JP C, a16</code> (0xDA) - Jump if Carry flag is set</li>
+            </ul>
+
+            <p>Adding these to the switch case is straightforward:</p>
+
+            <pre><code>int CPU::execute_instruction(Memory& memory) {
+    uint8_t opcode = memory.read(pc);
+    switch (opcode) {
+        case 0x00: return nop();
+        case 0xC2: return jp_a16(memory.read_word(pc + 1), !get_flag(af.low, FLAG_ZERO));
+        case 0xC3: return jp_a16(memory.read_word(pc + 1));
+        case 0xCA: return jp_a16(memory.read_word(pc + 1), get_flag(af.low, FLAG_ZERO));
+        case 0xD2: return jp_a16(memory.read_word(pc + 1), !get_flag(af.low, FLAG_CARRY));
+        case 0xDA: return jp_a16(memory.read_word(pc + 1), get_flag(af.low, FLAG_CARRY));
+        default:
+            unimplemented_instruction(opcode, memory.rom);
+            return -1;
+    }
+}</code></pre>
+
+            <p>With one function, we've implemented 5 opcodes! This is the power of looking for patterns in the instruction set.</p>
+
+            <h3>Testing the Jump</h3>
+            <p>Running the emulator again, we successfully execute the jump and encounter the next instruction:</p>
+
+            <pre><code>Game Boy Emulator
+ROM loaded: 32768 bytes
+Starting emulation...
+
+Unimplemented instruction: 0xAF at PC: 0x0150
+
+Addr  Instruction           Flags       Len  Cycles
+----  --------------------  --------    ---  ------
+0150  XOR A                 Z,0,0,0       1  4
+
+CPU State:
+A: 0000  B: 0000  C: 0000  D: 0000  E: 0000  H: 0000  L: 0000  SP: FFFE  PC: 0150
+Flags: Z=false N=false H=false C=false</code></pre>
+
+            <p>Progress! The PC has moved from 0x0101 to 0x0150, confirming our jump worked. Now we need to implement <code>XOR A</code>.</p>
+        </section>
+
+        <section>
+            <h2>Implementing XOR</h2>
+            
+            <h3>Understanding XOR A</h3>
+            <p>The instruction <code>XOR A</code> performs a bitwise XOR between register A and itself. Since any value XORed with itself is zero, this is a common idiom for clearing register A to zero. It's faster and shorter than <code>LD A, 0</code>.</p>
+
+            <p>However, the Game Boy has XOR instructions for all registers:</p>
+            <ul>
+                <li>XOR B, C, D, E, H, L (opcodes 0xA8-0xAD) - XOR with register</li>
+                <li>XOR (HL) (0xAE) - XOR with value at memory address HL</li>
+                <li>XOR A (0xAF) - XOR with register A (clear to zero)</li>
+                <li>XOR n8 (0xEE) - XOR with immediate byte</li>
+            </ul>
+
+            <h3>A Generic XOR Function</h3>
+            <p>Rather than implementing separate functions for each variant, we can create one generic function that handles all cases:</p>
+
+            <pre><code>// cpu.h
+int xor_a(uint8_t value, int length = 1, int cycles = 4);
+
+// cpu.cpp
+int CPU::xor_a(uint8_t value, int length, int cycles) {
+    af.high ^= value;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, af.high == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+    
+    pc += length;   // Move past the instruction and operands
+    return cycles;  // Return the cycle count
+}</code></pre>
+
+            <p>The key insight here is using <code>length</code> and <code>cycles</code> parameters with sensible defaults:</p>
+            <ul>
+                <li><strong>Register XOR</strong> - Default values work perfectly (1 byte, 4 cycles)</li>
+                <li><strong>Memory XOR (HL)</strong> - Same length, but explicitly pass 8 cycles for memory read</li>
+                <li><strong>Immediate XOR</strong> - Explicitly pass 2 bytes for the immediate value, 8 cycles</li>
+            </ul>
+
+            <p>This design is cleaner than using "base + extra" values - the parameters directly specify the total instruction length and cycle count, making the code more readable at the call sites.</p>
+
+            <h3>Adding All XOR Variants</h3>
+            <pre><code>case 0xA8: return xor_a(bc.high);                     // XOR B
+case 0xA9: return xor_a(bc.low);                      // XOR C
+case 0xAA: return xor_a(de.high);                     // XOR D
+case 0xAB: return xor_a(de.low);                      // XOR E
+case 0xAC: return xor_a(hl.high);                     // XOR H
+case 0xAD: return xor_a(hl.low);                      // XOR L
+case 0xAE: return xor_a(memory.read(hl.pair), 1, 8); // XOR (HL)
+case 0xAF: return xor_a(af.high);                     // XOR A
+case 0xEE: return xor_a(memory.read(pc + 1), 2, 8);  // XOR n8</code></pre>
+
+            <p>With one function, we've implemented 9 opcodes! We're now at 15 opcodes total (NOP + 5 JPs + 9 XORs).</p>
+        </section>
+
+        <section>
+            <h2>The Pattern Emerges</h2>
+            <p>As we continue implementing instructions, a pattern becomes clear:</p>
+            
+            <ol>
+                <li><strong>Run the emulator</strong> - Let it tell you what instruction it needs</li>
+                <li><strong>Identify the family</strong> - Is this instruction one of many similar ones?</li>
+                <li><strong>Design generically</strong> - Create functions that handle multiple opcodes</li>
+                <li><strong>Implement them all</strong> - Add all related opcodes to the switch case</li>
+                <li><strong>Test</strong> - Run again and move to the next instruction</li>
+            </ol>
+
+            <p>This approach is efficient and ensures we only implement what's actually needed for our target ROM (Tetris), while still writing reusable code that works for other games later.</p>
+
+            <h3>Next Steps</h3>
+            <p>Following this pattern, we'll continue implementing instruction families:</p>
+            <ul>
+                <li><strong>LD instructions</strong> - Loading data between registers and memory</li>
+                <li><strong>INC/DEC</strong> - Incrementing and decrementing values</li>
+                <li><strong>Arithmetic</strong> - ADD, SUB, CP (compare)</li>
+                <li><strong>Stack operations</strong> - PUSH, POP, CALL, RET</li>
+                <li><strong>Bit operations</strong> - BIT, SET, RES (CB-prefixed)</li>
+            </ul>
+
+            <p>By the time Tetris runs, we'll have implemented roughly 80-100 opcodes - about 35-40% of the full instruction set. But the framework we're building makes adding the remaining instructions straightforward when needed.</p>
+        </section>
+
+        <section>
+            <h2>Implementing LD (Load) Instructions</h2>
+            
+            <h3>The Most Common Instruction Family</h3>
+            <p>LD (Load) instructions are the bread and butter of Game Boy programming. They move data between registers, between registers and memory, and load immediate values. There are over 40 different LD opcodes in the instruction set!</p>
+
+            <p>Following our pattern of looking for commonalities, we might be tempted to create a single generic LD function. However, after examining the instruction set, we discover that LD instructions fall into several distinct categories that can't easily be unified:</p>
+
+            <h3>Three Separate LD Functions</h3>
+            <p>We end up implementing three distinct LD helper functions:</p>
+
+            <h4>1. LD rr, n16 - Load 16-bit Immediate to Register Pair</h4>
+            <pre><code>int CPU::ld_rr_n16(uint16_t& dest, uint16_t value) {
+    dest = value;
+    pc += 3; // Move past the instruction and operands
+    return 12; // LD rr, n16 takes 12 cycles
+}</code></pre>
+
+            <p>This handles loading a 16-bit immediate value into register pairs (BC, DE, HL, or SP). Examples:</p>
+            <ul>
+                <li>LD BC, $1234 (0x01) - <code>ld_rr_n16(bc.pair, memory.read_word(pc + 1))</code></li>
+                <li>LD DE, $5678 (0x11) - <code>ld_rr_n16(de.pair, memory.read_word(pc + 1))</code></li>
+                <li>LD HL, $9ABC (0x21) - <code>ld_rr_n16(hl.pair, memory.read_word(pc + 1))</code></li>
+                <li>LD SP, $FFFE (0x31) - <code>ld_rr_n16(sp, memory.read_word(pc + 1))</code></li>
+            </ul>
+
+            <h4>2. LD r, n8 - Load 8-bit Immediate to Register</h4>
+            <pre><code>int CPU::ld_r_n8(uint8_t& dest, uint8_t value) {
+    dest = value;
+    pc += 2; // Move past the instruction and operand
+    return 8; // LD r, n8 takes 8 cycles
+}</code></pre>
+
+            <p>This loads an 8-bit immediate value into a single register (A, B, C, D, E, H, or L). Examples:</p>
+            <ul>
+                <li>LD B, $42 (0x06) - <code>ld_r_n8(bc.high, memory.read(pc + 1))</code></li>
+                <li>LD C, $FF (0x0E) - <code>ld_r_n8(bc.low, memory.read(pc + 1))</code></li>
+                <li>LD A, $00 (0x3E) - <code>ld_r_n8(af.high, memory.read(pc + 1))</code></li>
+            </ul>
+
+            <h4>3. LD (HL+/-), A - Load A to Memory with Auto-Increment/Decrement</h4>
+            <pre><code>int CPU::ld_hlp_a(Memory& memory, bool increment) {
+    memory.write(hl.pair, af.high);
+    hl.pair += increment ? 1 : -1;
+    pc += 1; // Move past the instruction
+    return 8; // LD (HL+/-), A takes 8 cycles
+}</code></pre>
+
+            <p>This writes register A to the memory address in HL, then automatically increments or decrements HL. It's used for efficient sequential memory writes:</p>
+            <ul>
+                <li>LD (HL+), A (0x22) - <code>ld_hlp_a(memory, true)</code> - Write and increment</li>
+                <li>LD (HL-), A (0x32) - <code>ld_hlp_a(memory, false)</code> - Write and decrement</li>
+            </ul>
+
+            <h3>Other LD Variants Still to Come</h3>
+            <p>We've only scratched the surface! The Game Boy has many more LD instructions:</p>
+            <ul>
+                <li><strong>Register-to-register</strong> - LD B, C, LD A, H, etc. (can be implemented with inline code in the switch)</li>
+                <li><strong>Memory reads</strong> - LD A, (HL), LD A, (BC), etc.</li>
+                <li><strong>Memory writes</strong> - LD (HL), B, LD (DE), A, etc.</li>
+                <li><strong>Direct memory access</strong> - LD A, ($FF00+n), LD ($C000), A, etc.</li>
+                <li><strong>Stack pointer operations</strong> - LD HL, SP+n, LD (nn), SP, etc.</li>
+            </ul>
+
+            <p>As we encounter these in Tetris, we'll implement them following the same philosophy: group similar operations when it makes sense, but don't force unification where it creates complexity.</p>
+        </section>
+
+        <section>
+            <h2>Implementing DEC (Decrement)</h2>
+            
+            <h3>A Simple but Flag-Heavy Instruction</h3>
+            <p>The DEC instruction decrements a register by 1. While the operation itself is trivial, it's our first instruction that requires careful flag handling, particularly the Half Carry flag.</p>
+
+            <h3>Understanding the Half Carry Flag</h3>
+            <p>The Half Carry flag (H) is set when there's a borrow from bit 4 during subtraction. This might seem obscure, but it's crucial for BCD (Binary Coded Decimal) arithmetic used by the DAA instruction.</p>
+
+            <p>For DEC, we need to detect when the lower 4 bits (bits 0-3) underflow. This happens when the lower nibble was <code>0x0</code> before decrementing:</p>
+
+            <pre><code>0x10 - 1 = 0x0F  →  lower nibble: 0000 → 1111  ✓ Half carry
+0x20 - 1 = 0x1F  →  lower nibble: 0000 → 1111  ✓ Half carry
+0xA0 - 1 = 0x9F  →  lower nibble: 0000 → 1111  ✓ Half carry
+0x00 - 1 = 0xFF  →  lower nibble: 0000 → 1111  ✓ Half carry
+
+0x15 - 1 = 0x14  →  lower nibble: 0101 → 0100  ✗ No half carry
+0x3B - 1 = 0x3A  →  lower nibble: 1011 → 1010  ✗ No half carry</code></pre>
+
+            <p>The trick: after decrementing, if the lower nibble equals <code>0x0F</code> (all 1s), there was a borrow from bit 4!</p>
+
+            <h3>The Implementation</h3>
+            <pre><code>int CPU::dec_r(uint8_t& reg) {
+    reg--;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, (reg & 0x0F) == 0x0F);
+    // Carry flag unchanged
+    
+    pc += 1; // Move past the instruction
+    return 4; // DEC r takes 4 cycles
+}</code></pre>
+
+            <p>Key points:</p>
+            <ul>
+                <li><strong>Zero flag</strong> - Set if result is 0</li>
+                <li><strong>Subtract flag</strong> - Always set to 1 for DEC (it's a subtraction)</li>
+                <li><strong>Half Carry flag</strong> - Set when <code>(reg & 0x0F) == 0x0F</code> after decrement</li>
+                <li><strong>Carry flag</strong> - Unchanged (DEC doesn't affect it)</li>
+            </ul>
+
+            <h3>All Register DEC Opcodes</h3>
+            <p>There are 7 register DEC instructions, all using the same function:</p>
+
+            <pre><code>case 0x05: return dec_r(bc.high); // DEC B
+case 0x0D: return dec_r(bc.low);  // DEC C
+case 0x15: return dec_r(de.high); // DEC D
+case 0x1D: return dec_r(de.low);  // DEC E
+case 0x25: return dec_r(hl.high); // DEC H
+case 0x2D: return dec_r(hl.low);  // DEC L
+case 0x3D: return dec_r(af.high); // DEC A</code></pre>
+
+            <p>Seven opcodes with one simple function!</p>
+
+            <h3>What About DEC (HL)?</h3>
+            <p>You might notice there's also a DEC (HL) instruction (opcode 0x35) that decrements the value in memory at address HL. Can we reuse <code>dec_r</code> for this?</p>
+
+            <p><strong>No</strong> - and this is another example of when not to force abstraction. DEC (HL) has fundamental differences:</p>
+
+            <ul>
+                <li><strong>Different access pattern</strong> - Requires read-modify-write from memory, not direct register access</li>
+                <li><strong>Different cycle count</strong> - Takes 12 cycles instead of 4 due to memory access</li>
+                <li><strong>Type incompatibility</strong> - Can't get a reference to a memory location from <code>memory.read()</code></li>
+            </ul>
+
+            <p>Attempting to unify them would require:</p>
+            <pre><code>// This doesn't work!
+uint8_t value = memory.read(hl.pair);
+dec_r(value);  // Modifies LOCAL copy, not memory!
+// The change is lost - memory was never written back</code></pre>
+
+            <p>The fundamental issue: registers give us direct access via references, but memory requires explicit read-modify-write. This is why DEC (HL) needs its own implementation when we encounter it.</p>
+
+            </section>
+
+        <section>
+            <h2>Implementing DI and EI (Interrupt Control)</h2>
+            
+            <h3>The Simplest Instructions</h3>
+            <p>After dealing with flag handling and memory operations, DI (Disable Interrupts) and EI (Enable Interrupts) are refreshingly simple. They control the CPU's Interrupt Master Enable (IME) flag, which acts as a master on/off switch for the interrupt system.</p>
+
+            <h3>Adding IME to the CPU</h3>
+            <p>First, we need to add the IME flag and delay tracking to our CPU structure:</p>
+
+            <pre><code>// cpu.h
+struct CPU
+{
+    RegisterPair bc, de, hl, af;
+    uint16_t sp;
+    uint16_t pc;
+    bool ime; // Interrupt Master Enable flag
+    bool ime_scheduled; // EI delay: IME enables after next instruction
+    
+    CPU();
+    // ... rest of functions
+};</code></pre>
+
+            <p>Initialize both in the constructor:</p>
+            <pre><code>// cpu.cpp
+CPU::CPU() {
+    pc = 0x100;
+    sp = 0xFFFE;
+    ime = false; // Interrupts start disabled
+    ime_scheduled = false;
+}</code></pre>
+
+            <h3>Implementing DI (Disable Interrupts)</h3>
+            <p>DI (opcode 0xF3) simply sets IME to false:</p>
+
+            <pre><code>int CPU::di() {
+    ime = false;
+    pc += 1;
+    return 4; // DI takes 4 cycles
+}</code></pre>
+
+            <p>That's it! No flags affected, no operands, no special cases. Just set IME to false and move on.</p>
+
+            <h3>Implementing EI (Enable Interrupts) with Delay</h3>
+            <p>EI (opcode 0xFB) is slightly more complex. The real Game Boy has a one-instruction delay before interrupts are actually enabled:</p>
+
+            <pre><code>EI          ; IME not yet enabled (ime_scheduled = true)
+LD A, $42   ; This instruction executes, then IME becomes enabled
+NOP         ; NOW interrupts can fire</code></pre>
+
+            <p>This delay is crucial for safe interrupt handling, particularly with RETI:</p>
+            <pre><code>EI          ; Schedule IME enable
+RETI        ; Return from interrupt handler
+            ; Without the delay, an interrupt could fire between EI and RETI!</code></pre>
+
+            <p>The implementation uses a flag to schedule the enable:</p>
+
+            <pre><code>int CPU::ei() {
+    ime_scheduled = true; // Schedule enable for after next instruction
+    pc += 1;
+    return 4; // EI takes 4 cycles
+}</code></pre>
+
+            <h3>Applying the Delayed Enable</h3>
+            <p>At the start of each instruction execution, we check if IME should be enabled:</p>
+
+            <pre><code>int CPU::execute_instruction(Memory& memory) {
+    // Apply scheduled IME enable (from previous EI)
+    if (ime_scheduled) {
+        ime = true;
+        ime_scheduled = false;
+    }
+    
+    // ... execute current instruction
+}</code></pre>
+
+            <p>This ensures the enable takes effect at the start of the instruction <em>after</em> EI, matching real hardware behavior.</p>
+
+            <h3>Add to the Switch Case</h3>
+            <pre><code>case 0xF3: return di(); // DI
+case 0xFB: return ei(); // EI</code></pre>
+
+            <h3>Why Games Use DI/EI</h3>
+            <p>Games use these instructions for critical sections of code:</p>
+            <ul>
+                <li><strong>DMA transfers</strong> - Copying sprite data must complete atomically</li>
+                <li><strong>Timing-sensitive code</strong> - Music/sound routines that can't be interrupted</li>
+                <li><strong>Initialization</strong> - Setting up hardware before enabling interrupts</li>
+                <li><strong>Saving state</strong> - Ensuring SRAM writes complete without interruption</li>
+            </ul>
+
+            <p>Most Game Boy ROMs start with a DI instruction to ensure the bootup code runs without interruptions. Tetris is no exception! We'll implement the full interrupt handling system when we need it.</p>
+        </section>
+
+        <section>
+            <h2>Implementing LDH (Load High Memory)</h2>
+            
+            <h3>What is High Memory?</h3>
+            <p>The Game Boy's memory map includes a special region called "high memory" or "zero page" at addresses $FF00-$FFFF. This 256-byte region is used for:</p>
+            <ul>
+                <li><strong>Hardware I/O registers</strong> - Joypad ($FF00), timers ($FF04-$FF07), audio ($FF10-$FF26), LCD ($FF40-$FF4B)</li>
+                <li><strong>High RAM (HRAM)</strong> - Fast internal RAM ($FF80-$FFFE)</li>
+                <li><strong>Interrupt Enable register</strong> - ($FFFF)</li>
+            </ul>
+
+            <p>Because accessing this region is so common, the Game Boy provides special instructions that use shorter addresses.</p>
+
+            <h3>The LDH Instruction Family</h3>
+            <p>There are four LDH instructions, split into two categories:</p>
+
+            <h4>LDH with Direct Offset (a8)</h4>
+            <ul>
+                <li><strong>LDH (a8), A</strong> (0xE0) - Store A at address $FF00 + a8</li>
+                <li><strong>LDH A, (a8)</strong> (0xF0) - Load A from address $FF00 + a8</li>
+            </ul>
+            <p>These take 2 bytes (opcode + offset) and 12 cycles. Example: <code>LDH ($44), A</code> stores A at address $FF44 (the LY register - current scanline).</p>
+
+            <h4>LDH with Register C</h4>
+            <ul>
+                <li><strong>LDH (C), A</strong> (0xE2) - Store A at address $FF00 + C</li>
+                <li><strong>LDH A, (C)</strong> (0xF2) - Load A from address $FF00 + C</li>
+            </ul>
+            <p>These take 1 byte (just the opcode) and 8 cycles, using register C as the offset. Useful for loops accessing multiple I/O registers.</p>
+
+            <h3>A Unified Implementation</h3>
+            <p>Despite having four opcodes, these instructions share the same logic and can be unified into a single function:</p>
+
+            <pre><code>// cpu.h
+int ldh(Memory& memory, uint8_t offset, bool to_memory, int length = 1, int cycles = 8);
+
+// cpu.cpp
+int CPU::ldh(Memory& memory, uint8_t offset, bool to_memory, int length, int cycles) {
+    if (to_memory) {
+        memory.write(0xFF00 + offset, af.high);
+    } else {
+        af.high = memory.read(0xFF00 + offset);
+    }
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <p>The key insights here:</p>
+            <ul>
+                <li><strong>offset parameter</strong> - Can be either an immediate byte or register C's value</li>
+                <li><strong>to_memory flag</strong> - Determines direction (store A vs load A)</li>
+                <li><strong>length and cycles parameters</strong> - Handle differences between variants (C-mode is 1 byte/8 cycles, a8-mode is 2 bytes/12 cycles)</li>
+                <li><strong>$FF00 base</strong> - Always added to the offset to access high memory</li>
+            </ul>
+
+            <h3>Switch Case Implementation</h3>
+            <pre><code>case 0xE0: return ldh(memory, memory.read(pc + 1), true, 2, 12);  // LDH (a8), A
+case 0xE2: return ldh(memory, bc.low, true);                       // LDH (C), A
+case 0xF0: return ldh(memory, memory.read(pc + 1), false, 2, 12); // LDH A, (a8)
+case 0xF2: return ldh(memory, bc.low, false);                      // LDH A, (C)</code></pre>
+
+            <p>With one function, we handle all four LDH opcodes! The default parameters (length=1, cycles=8) apply perfectly to the C-mode variants, while the a8-mode variants explicitly pass 2 and 12.</p>
+
+            <h3>Why LDH Exists</h3>
+            <p>You might wonder: why not just use regular memory access? Three reasons:</p>
+            <ol>
+                <li><strong>Code size</strong> - LDH is 2 bytes instead of 3 bytes for <code>LD (nn), A</code></li>
+                <li><strong>Speed</strong> - 12 cycles vs 16 cycles for full address mode</li>
+                <li><strong>Common pattern</strong> - Most I/O register access falls in this range</li>
+            </ol>
+
+            <p>Games use LDH constantly for hardware access: reading joypad state, checking LCD status, updating scroll registers, etc. It's one of the most frequent instructions in any Game Boy ROM.</p>
+        </section>
+
+        <section>
+            <h2>Implementing CP (Compare)</h2>
+            
+            <h3>What Does CP Do?</h3>
+            <p>The CP (Compare) instruction performs a subtraction <code>A - value</code> but <em>only updates flags without storing the result</em>. This makes it perfect for conditional branching:</p>
+
+            <pre><code>CP $08      ; Compare A with 8 (is A equal to, less than, or greater than 8?)
+JR Z, done  ; Jump if A was 8 (Zero flag set)
+JR C, less  ; Jump if A was less than 8 (Carry flag set)
+            ; Otherwise, A was greater than 8 (fall through)</code></pre>
+
+            <h3>Flag Behavior</h3>
+            <p>CP sets flags exactly like SUB, but doesn't modify register A:</p>
+            <ul>
+                <li><strong>Z (Zero)</strong> - Set if A == value (result would be zero)</li>
+                <li><strong>N (Subtract)</strong> - Always set to 1 (CP is a subtraction)</li>
+                <li><strong>H (Half Carry)</strong> - Set if borrow from bit 4 (lower nibble underflow)</li>
+                <li><strong>C (Carry)</strong> - Set if A < value (borrow occurred)</li>
+            </ul>
+
+            <p>The Carry flag interpretation is key: it's set when A is less than the compared value, making unsigned comparisons straightforward.</p>
+
+            <h3>The CP Instruction Family</h3>
+            <p>Like XOR, CP has variants for all registers plus immediate:</p>
+            <ul>
+                <li><strong>CP B/C/D/E/H/L/A</strong> (0xB8-0xBF) - Compare A with register (1 byte, 4 cycles)</li>
+                <li><strong>CP (HL)</strong> (0xBE) - Compare A with value at HL (1 byte, 8 cycles)</li>
+                <li><strong>CP n8</strong> (0xFE) - Compare A with immediate byte (2 bytes, 8 cycles)</li>
+            </ul>
+
+            <h3>Generic Implementation</h3>
+            <p>All CP variants share the same logic, making this an ideal candidate for a generic function:</p>
+
+            <pre><code>// cpu.h
+int cp_a(uint8_t value, int length = 1, int cycles = 4);
+
+// cpu.cpp
+int CPU::cp_a(uint8_t value, int length, int cycles) {
+    uint8_t result = af.high - value;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, result == 0);
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, (af.high & 0x0F) < (value & 0x0F));
+    set_flag(af.low, FLAG_CARRY, af.high < value);
+    
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <p>Note that we calculate the result for flag purposes, but never store it. The half-carry check tests if the lower nibble would underflow, and the carry check tests if the full byte would underflow.</p>
+
+            <h3>Switch Case Implementation</h3>
+            <pre><code>case 0xB8: return cp_a(bc.high);                     // CP B
+case 0xB9: return cp_a(bc.low);                      // CP C
+case 0xBA: return cp_a(de.high);                     // CP D
+case 0xBB: return cp_a(de.low);                      // CP E
+case 0xBC: return cp_a(hl.high);                     // CP H
+case 0xBD: return cp_a(hl.low);                      // CP L
+case 0xBE: return cp_a(memory.read(hl.pair), 1, 8); // CP (HL)
+case 0xBF: return cp_a(af.high);                     // CP A
+case 0xFE: return cp_a(memory.read(pc + 1), 2, 8);  // CP n8</code></pre>
+
+            <p>With one function, we've implemented 9 opcodes! This follows the same pattern as XOR - the default parameters handle register variants, while memory and immediate variants pass explicit lengths and cycle counts.</p>
+
+            <h3>Typical Usage Patterns</h3>
+            <p>Games use CP extensively for:</p>
+            <ul>
+                <li><strong>Boundary checking</strong> - <code>CP $08; JR C, in_range</code> (is value < 8?)</li>
+                <li><strong>Loop termination</strong> - <code>CP MAX_ITEMS; JR Z, done</code></li>
+                <li><strong>State machines</strong> - <code>CP STATE_MENU; JP Z, handle_menu</code></li>
+                <li><strong>Range testing</strong> - Compare against multiple values to route to different code paths</li>
+            </ul>
+
+            <p>In Tetris, CP is used to check piece positions against boundaries, detect collisions, and determine game state. It's essential for any game logic that makes decisions! Note that CP works similarly to the SUB instruction (not yet implemented), but crucially, it doesn't modify register A - making it perfect for comparisons where you need to preserve the original value.</p>
+        </section>
+
+        <section>
+            <h2>Reaching the Hardware Boundary</h2>
+            
+            <p>After initialization completes, Tetris enters a tight loop waiting for hardware:</p>
+            <pre><code>0233  LDH A, ($44)          -           2  12    ; Read LY register
+0235  CP $94                Z,1,H,C     2  8     ; Compare with 148
+0237  JR NZ, $-6            -           2  12/8  ; Loop if not equal</code></pre>
+
+            <p>This infinite loop polls the LY register (LCD Y-coordinate at $FF44), waiting for it to reach scanline 148. This is the game's frame synchronization - it waits for VBlank before rendering each frame.</p>
+
+            <p>Our emulator gets stuck here because we haven't implemented LCD hardware yet. The LY register always returns the same value, so the comparison never succeeds. This is our cue that CPU instruction implementation has reached a natural pause point, and we need to implement hardware timing and LCD registers before the game can progress further.</p>
+
+            <p>We've successfully implemented <strong>55 opcodes</strong> (21.5% of the instruction set) - enough to boot Tetris, run its initialization, and reach the main game loop. In the next phase, we'll implement the LCD hardware this loop is waiting for!</p>
+        </section>
+
+        <section>
+            <h3>Full Implementation</h3>
+            <p>
+                The code snippets in this article are simplified for educational purposes. The full instruction 
+                implementation can be found on the 
+                <a href="https://github.com/lasiqueira/gbemu/tree/instructions_tetris" target="_blank">instructions_tetris branch</a>.
+            </p>
+        </section>
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <a href="cpu_and_memory.html">← Cpu and Memory</a>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>
