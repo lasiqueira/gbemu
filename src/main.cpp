@@ -3,7 +3,9 @@
 #include <print>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include "gameboy.h"
+#include "disassembler.h"
 
 int main(int argc, char** argv)
 {
@@ -12,11 +14,22 @@ int main(int argc, char** argv)
     // Check command line arguments
     if (argc < 2)
     {
-        std::println(std::cerr, "Usage: {} <rom_path>", argv[0]);
+        std::println(std::cerr, "Usage: {} <rom_path> [--disassemble|-d]", argv[0]);
         return 1;
     }
     
     const std::string rom_path = argv[1];
+    bool disassemble_mode = false;
+    
+    // Check for disassemble flag
+    if (argc >= 3)
+    {
+        std::string arg2 = argv[2];
+        if (arg2 == "--disassemble" || arg2 == "-d")
+        {
+            disassemble_mode = true;
+        }
+    }
     
     // Check if file exists
     if (!std::filesystem::exists(rom_path))
@@ -45,6 +58,13 @@ int main(int argc, char** argv)
     {
         std::println(std::cerr, "Failed to read ROM file completely.");
         return 1;
+    }
+    
+    // If disassemble mode, print disassembly and exit
+    if (disassemble_mode)
+    {
+        disassembler::disassemble_rom(rom, 0, rom.size());
+        return 0;
     }
     
     // Initialize Game Boy and load ROM

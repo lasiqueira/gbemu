@@ -64,18 +64,54 @@ The build system uses:
 
 ## Usage
 
-### Disassemble a ROM
+### Run Emulator
 
 ```bash
+# Linux/macOS
 ./build/bin/gbemu rom.gb
+
+# Windows
+.\build\bin\Release\gbemu.exe rom.gb
+
+# Disassemble only (no execution)
+./build/bin/gbemu rom.gb --disassemble       # Linux/macOS
+.\build\bin\Release\gbemu.exe rom.gb -d      # Windows (short form)
 ```
 
-The disassembler will output a formatted table showing:
+**Disassembler Mode** (`--disassemble` or `-d`): Outputs a formatted table showing:
 - **Addr**: Instruction address (hex)
 - **Instruction**: Mnemonic and operands with actual values
 - **Flags**: Affected CPU flags (Z, N, H, C) or `-`
 - **Len**: Instruction length in bytes
 - **Cycles**: CPU cycles (shows conditional variants as fractions, e.g., `8/20`)
+
+### Debug Mode
+
+To enable debug tracing (shows each instruction as executed), build with debug features:
+
+```bash
+# Configure with debug features enabled
+cmake -B build -DGBEMU_DEBUG=ON
+
+# Build
+cmake --build build --config Release  # Windows
+cmake --build build                   # Linux/macOS
+
+# Run - will show instruction trace
+./build/bin/gbemu rom.gb                     # Linux/macOS
+.\build\bin\Release\gbemu.exe rom.gb         # Windows
+```
+
+**Debug output** shows detailed CPU state and instruction trace:
+```
+Executing: 0xC3 at PC: 0x0101
+JP $0150
+CPU State after execution:
+A: 00  B: 00  C: 00  D: 00  E: 00  H: 00  L: 00  SP: FFFE  PC: 0150
+Flags: Z=0 N=0 H=0 C=0
+Cycles: 16
+---
+```
 
 ### Run Tests
 
@@ -233,11 +269,27 @@ Addr  Instruction           Flags       Len  Cycles
 - Direct binary file I/O with `fopen`/`fread`
 - RAII for resource management
 
+## Current Status
+
+**CPU Instructions: 55/256 implemented (21.5%)**
+
+Implemented instruction families:
+- **Control flow**: JP (conditional/unconditional), JR
+- **Data transfer**: LD (register pairs, 8-bit immediates, (HL+/-)), LDH (high memory access)
+- **Arithmetic**: INC, DEC, ADD, SUB, CP (compare)
+- **Logical**: XOR, OR, AND
+- **Interrupt control**: DI, EI
+- **Stack operations**: PUSH, POP, CALL, RET
+- **Miscellaneous**: NOP, HALT
+
+**Milestone**: Can boot and initialize Tetris ROM, reaching VBlank synchronization loop
+
 ## Future Work
 
-- Additional CPU instruction implementations (currently only NOP is implemented)
-- Interrupt handling (IME, IE, IF registers)
-- Graphics/PPU emulation (LCD, sprites, background)
+- LCD/PPU timing system (LY register, scanline tracking, VBlank interrupts)
+- Additional CPU instruction implementations as needed
+- Full interrupt handling (dispatch, vectors, timing)
+- Graphics/PPU emulation (tiles, sprites, background rendering)
 - Sound/APU emulation (4 audio channels)
 - Input handling (joypad)
 - Debugger interface

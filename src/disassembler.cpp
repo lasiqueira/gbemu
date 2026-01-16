@@ -401,7 +401,7 @@ namespace disassembler
         print_disassembly(rom, start_addr, end_addr);
     }
 
-    void print_instruction_at(const std::vector<uint8_t> &memory, uint16_t pc)
+    void print_instruction_at(const std::vector<uint8_t> &memory, uint16_t pc, bool print_header)
     {
         if (pc >= memory.size())
             return;
@@ -414,8 +414,10 @@ namespace disassembler
         }
 
         Instruction instr = decode_instruction(bytes, available);
-        std::println("Addr  Instruction           Flags     Len  Cycles");
-        std::println("----  --------------------  --------  ---  ------");
+        if (print_header) {
+            std::println("Addr  Instruction           Flags     Len  Cycles");
+            std::println("----  --------------------  --------  ---  ------");
+        }
         instr.print(pc, bytes);
     }
 }
