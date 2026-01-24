@@ -271,29 +271,35 @@ Addr  Instruction           Flags       Len  Cycles
 
 ## Current Status
 
-**CPU Instructions: 55/256 implemented (21.5%)**
+**CPU Instructions: ~190/256 implemented (~74%)**
 
 Implemented instruction families:
-- **Control flow**: JP (conditional/unconditional), JR
-- **Data transfer**: LD (register pairs, 8-bit immediates, (HL+/-)), LDH (high memory access)
-- **Arithmetic**: INC, DEC, ADD, SUB, CP (compare)
-- **Logical**: XOR, OR, AND
-- **Interrupt control**: DI, EI
-- **Stack operations**: PUSH, POP, CALL, RET
-- **Miscellaneous**: NOP, HALT
+- **Control flow**: JP, JR, CALL, RET (conditional/unconditional)
+- **Data transfer**: LD (all variants: r8, r16, immediate, (HL+/-), direct memory, (BC)/(DE))
+- **Arithmetic**: INC, DEC, ADD, SUB, CP, ADC, SBC (8-bit and 16-bit variants)
+- **Logical**: XOR, OR, AND, BIT, RES, SET, RL, RLC, RR, RRC, SLA, SRA, SRL, SWAP
+- **Interrupt control**: DI, EI, RETI
+- **Stack operations**: PUSH, POP (all register pairs)
+- **Miscellaneous**: NOP, HALT, DAA, CPL, CCF, SCF
 
-**Milestone**: Can boot and initialize Tetris ROM, reaching VBlank synchronization loop
+**Milestone**: Successfully boots Tetris ROM to title screen
+
+- ✅ Boots and initializes Tetris ROM completely
+- ✅ LCD/PPU timing system working (LY register, 154 scanlines, VBlank interrupts)
+- ✅ VBlank interrupt handling functional
+- ✅ Main game loop executes at ~60 FPS
+- ✅ Joypad register reads working (game waiting for input at title screen)
+- ⚠️ Additional unimplemented instructions likely exist but haven't been encountered yet
 
 ## Future Work
 
-- LCD/PPU timing system (LY register, scanline tracking, VBlank interrupts)
-- Additional CPU instruction implementations as needed
-- Full interrupt handling (dispatch, vectors, timing)
-- Graphics/PPU emulation (tiles, sprites, background rendering)
+- **Input handling** (joypad input implementation - next priority)
+- **Graphics/PPU emulation** (tiles, sprites, background rendering)
+- Remaining CPU instructions as discovered during gameplay
 - Sound/APU emulation (4 audio channels)
-- Input handling (joypad)
 - Debugger interface
 - Cartridge types (MBC1, MBC3, MBC5)
+- Save state functionality
 
 ## License
 

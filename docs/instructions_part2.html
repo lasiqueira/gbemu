@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementing CPU Instructions - Part 2 - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="instructions_part1.html">← Instructions - Part 1</a>
+        <span class="current">Instructions - Part 2</span>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>Implementing CPU Instructions - Part 2</h2>
+        <p><em>Breaking through the VBlank barrier and beyond</em></p>
+
+        <section>
+            <h2>The VBlank Barrier</h2>
+            <p>At the end of Part 1, we hit a critical milestone: Tetris completed its initialization and entered an infinite loop waiting for VBlank:</p>
+            
+            <pre><code>0233  LDH A, ($44)          -           2  12    ; Read LY register
+0235  CP $94                Z,1,H,C     2  8     ; Compare with 148
+0237  JR NZ, $-6            -           2  12/8  ; Loop if not equal</code></pre>
+
+            <p>This loop reads the LY register (LCD Y-coordinate at address $FF44) and waits for it to reach scanline 148 (0x94). Scanline 148 is in the <a href="https://gbdev.io/pandocs/Interrupt_Sources.html#int-40--vblank-interrupt" target="_blank">VBlank period</a> (scanlines 144-153), which is when games can safely update graphics without visual glitches.</p>
+
+            <p>Our emulator was stuck because the LY register always returned 0. The game logic was waiting for hardware that didn't exist yet.</p>
+        </section>
+
+        <section>
+            <h2>Understanding LCD Timing</h2>
+            
+            <h3>How the Game Boy LCD Works</h3>
+            <p>The Game Boy's LCD operates on a precise timing schedule:</p>
+            <ul>
+                <li><strong>Total scanlines per frame:</strong> 154 (numbered 0-153)</li>
+                <li><strong>Visible scanlines:</strong> 0-143 (the actual screen)</li>
+                <li><strong>VBlank scanlines:</strong> 144-153 (off-screen period)</li>
+                <li><strong>Cycles per scanline:</strong> 456 CPU cycles</li>
+                <li><strong>Cycles per frame:</strong> 70,224 CPU cycles (~59.7 Hz)</li>
+            </ul>
+
+            <p>During VBlank (scanlines 144-153), the LCD isn't actively drawing to the screen, making it safe for games to:</p>
+            <ul>
+                <li>Update tile data in VRAM</li>
+                <li>Modify sprite positions in OAM</li>
+                <li>Change palette registers</li>
+                <li>Adjust scroll positions</li>
+            </ul>
+
+            <p>Games synchronize with VBlank to ensure smooth 60 FPS gameplay without tearing or glitches.</p>
+
+            <h3>The LY Register</h3>
+            <p>The <a href="https://gbdev.io/pandocs/STAT.html#ff44--ly-lcd-y-coordinate-read-only" target="_blank">LY register</a> ($FF44) is a read-only hardware register that indicates which scanline the LCD is currently drawing. It increments from 0 to 153, then wraps back to 0, continuously cycling as the LCD refreshes.</p>
+
+            <p>Games use this register to:</p>
+            <ul>
+                <li>Detect VBlank period (when LY >= 144)</li>
+                <li>Synchronize frame timing</li>
+                <li>Implement raster effects (changing graphics mid-frame)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Implementing LCD Timing</h2>
+            
+            <h3>Adding LCD State to GameBoy</h3>
+            <p>Since the LCD is a hardware component that progresses based on CPU cycles, we implement it in the GameBoy orchestrator class, not in CPU or Memory.</p>
+
+            <p>First, add timing constants to <code>gameboy.h</code>:</p>
+
+            <pre><code>// Game Boy timing constants
+constexpr int CPU_FREQUENCY = 4194304;        // 4.194304 MHz
+constexpr double FRAME_RATE = 59.7;           // ~59.7 Hz
+constexpr int CYCLES_PER_FRAME = static_cast&lt;int&gt;(CPU_FREQUENCY / FRAME_RATE);
+
+// LCD timing constants
+constexpr int CYCLES_PER_SCANLINE = 456;      // Cycles per scanline
+constexpr int SCANLINES_PER_FRAME = 154;      // Total scanlines (0-153)
+constexpr int VBLANK_SCANLINE = 144;          // VBlank starts at scanline 144
+
+// I/O Register addresses
+constexpr uint16_t IO_IF = 0xFF0F;            // Interrupt Flag register
+constexpr uint16_t IO_LY = 0xFF44;            // LCD Y-coordinate register
+
+// Interrupt bits
+constexpr uint8_t INT_VBLANK = 0x01;          // Bit 0: VBlank interrupt
+constexpr uint8_t INT_LCD_STAT = 0x02;        // Bit 1: LCD STAT
+constexpr uint8_t INT_TIMER = 0x04;           // Bit 2: Timer
+constexpr uint8_t INT_SERIAL = 0x08;          // Bit 3: Serial
+constexpr uint8_t INT_JOYPAD = 0x10;          // Bit 4: Joypad
+
+// Interrupt vectors
+constexpr uint16_t INT_VECTOR_VBLANK = 0x0040;
+constexpr uint16_t INT_VECTOR_LCD_STAT = 0x0048;
+constexpr uint16_t INT_VECTOR_TIMER = 0x0050;
+constexpr uint16_t INT_VECTOR_SERIAL = 0x0058;
+constexpr uint16_t INT_VECTOR_JOYPAD = 0x0060;</code></pre>
+
+            <p>Then add LCD state tracking to the GameBoy struct:</p>
+
+            <pre><code>struct GameBoy {
+    Memory memory;
+    cpu::CPU cpu;
+    bool running;
+    
+    // LCD state
+    int lcd_cycles;  // Cycles accumulated for current scanline
+    uint8_t ly;      // Current scanline (0-153)
+    
+    GameBoy();
+    
+    void load_rom(const std::vector&lt;uint8_t&gt;& rom);
+    int step();
+    int step_frame();
+    void update_lcd(int cycles);  // Update LCD timing
+    void run();
+};</code></pre>
+
+            <h3>Initializing LCD State</h3>
+            <p>In the GameBoy constructor, initialize the LCD state and LY register:</p>
+
+            <pre><code>GameBoy::GameBoy() : running(false), lcd_cycles(0), ly(0) {
+    // Initialize LY register to 0
+    memory.write(IO_LY, 0);
+    // Initialize interrupt flag register
+    memory.write(IO_IF, 0);
+}</code></pre>
+
+            <h3>Updating LCD Based on Cycles</h3>
+            <p>The core of the implementation is <code>update_lcd()</code>, which advances the LCD state based on CPU cycles consumed:</p>
+
+            <pre><code>void GameBoy::update_lcd(int cycles) {
+    lcd_cycles += cycles;
+    
+    // Each scanline takes 456 cycles
+    while (lcd_cycles >= CYCLES_PER_SCANLINE) {
+        lcd_cycles -= CYCLES_PER_SCANLINE;
+        
+        // Move to next scanline
+        ly++;
+        
+        // Wrap around after scanline 153 (154 total scanlines)
+        if (ly >= SCANLINES_PER_FRAME) {
+            ly = 0;
+        }
+        
+        // Trigger VBlank interrupt when entering VBlank period
+        if (ly == VBLANK_SCANLINE) {
+            uint8_t if_reg = memory.read(IO_IF);
+            memory.write(IO_IF, if_reg | INT_VBLANK);  // Set VBlank bit
+        }
+        
+        // Update LY register in memory
+        memory.write(IO_LY, ly);
+    }
+}</code></pre>
+
+            <h3>Integrating with the Main Loop</h3>
+            <p>In <code>step_frame()</code>, call <code>update_lcd()</code> after each instruction:</p>
+
+            <pre><code>int GameBoy::step_frame() {
+    int cycles_executed = 0;
+    while (cycles_executed < CYCLES_PER_FRAME) {
+        int cycles = step();
+        if (cycles < 0) {
+            running = false;
+            return cycles; // Error occurred
+        }
+        cycles_executed += cycles;
+        
+        // Update LCD timing
+        update_lcd(cycles);
+    }
+    return cycles_executed;
+}</code></pre>
+
+            <p>Now, as the CPU executes instructions and consumes cycles, the LCD state advances accordingly. When Tetris reads from $FF44, it gets the current scanline value!</p>
+        </section>
+
+        <section>
+            <h2>Implementing Interrupt Support</h2>
+            
+            <p>With VBlank timing in place, we need to add interrupt handling so games can respond to VBlank events. The Game Boy has a sophisticated interrupt system with multiple sources.</p>
+
+            <p>For a comprehensive explanation of the interrupt system, see <a href="https://gbdev.io/pandocs/Interrupts.html" target="_blank">Pan Docs: Interrupts</a>.</p>
+
+            <h3>Understanding Game Boy Interrupts</h3>
+            <p>The interrupt system has three key components:</p>
+            <ul>
+                <li><strong>IF Register (0xFF0F)</strong> - Interrupt Flag: Each bit represents a pending interrupt (set by hardware)</li>
+                <li><strong>IE Register (0xFFFF)</strong> - Interrupt Enable: Each bit enables/disables that interrupt type (set by game)</li>
+                <li><strong>IME Flag</strong> - Interrupt Master Enable: Global on/off switch in CPU (controlled by EI/DI instructions)</li>
+            </ul>
+
+            <p>Interrupt priority order (highest to lowest):</p>
+            <ol>
+                <li>VBlank (IF bit 0, vector 0x0040) - Start of VBlank period</li>
+                <li>LCD STAT (IF bit 1, vector 0x0048) - LCD controller status</li>
+                <li>Timer (IF bit 2, vector 0x0050) - Timer overflow</li>
+                <li>Serial (IF bit 3, vector 0x0058) - Serial transfer complete</li>
+                <li>Joypad (IF bit 4, vector 0x0060) - Button press</li>
+            </ol>
+
+            <h3>Adding Interrupt Handling</h3>
+            <p>In <code>gameboy.h</code>, declare the interrupt handler:</p>
+
+            <pre><code>struct GameBoy {
+    // ... existing members ...
+    
+    void update_lcd(int cycles);
+    void handle_interrupts();  // Check and dispatch interrupts
+    void run();
+};</code></pre>
+
+            <p>Implement the interrupt dispatch logic in <code>gameboy.cpp</code>:</p>
+
+            <pre><code>void GameBoy::handle_interrupts() {
+    if (!cpu.ime) {
+        return; // Interrupts disabled globally
+    }
+    
+    uint8_t if_reg = memory.read(IO_IF);
+    uint8_t ie_reg = memory.read(IO_IE);
+    uint8_t triggered = if_reg & ie_reg & 0x1F;  // Which are both flagged AND enabled?
+    
+    if (triggered == 0) {
+        return; // No interrupts to handle
+    }
+    
+    // Disable IME to prevent nested interrupts
+    cpu.ime = false;
+    
+    // Determine which interrupt to service (priority order)
+    uint8_t interrupt_bit = 0;
+    uint16_t interrupt_vector = 0;
+    
+    if (triggered & INT_VBLANK) {
+        interrupt_bit = INT_VBLANK;
+        interrupt_vector = INT_VECTOR_VBLANK;
+    } else if (triggered & INT_LCD_STAT) {
+        interrupt_bit = INT_LCD_STAT;
+        interrupt_vector = INT_VECTOR_LCD_STAT;
+    } else if (triggered & INT_TIMER) {
+        interrupt_bit = INT_TIMER;
+        interrupt_vector = INT_VECTOR_TIMER;
+    } else if (triggered & INT_SERIAL) {
+        interrupt_bit = INT_SERIAL;
+        interrupt_vector = INT_VECTOR_SERIAL;
+    } else if (triggered & INT_JOYPAD) {
+        interrupt_bit = INT_JOYPAD;
+        interrupt_vector = INT_VECTOR_JOYPAD;
+    }
+    
+    // Clear the interrupt flag
+    memory.write(IO_IF, if_reg & ~interrupt_bit);
+    
+    // Push PC onto stack and jump to interrupt vector
+    cpu.sp -= 2;
+    memory.write_word(cpu.sp, cpu.pc);
+    cpu.pc = interrupt_vector;
+}</code></pre>
+
+            <h3>Calling Interrupt Handler</h3>
+            <p>Call <code>handle_interrupts()</code> before each instruction in <code>step_frame()</code>:</p>
+
+            <pre><code>int GameBoy::step_frame() {
+    int cycles_executed = 0;
+    while (cycles_executed < CYCLES_PER_FRAME) {
+        handle_interrupts();  // Check for pending interrupts
+        
+        int cycles = step();
+        if (cycles < 0) {
+            running = false;
+            return cycles;
+        }
+        cycles_executed += cycles;
+        update_lcd(cycles);
+    }
+    return cycles_executed;
+}</code></pre>
+
+            <h3>Why This Matters</h3>
+            <p>Many games use VBlank interrupts instead of polling the LY register. When the game executes <code>EI</code> (Enable Interrupts) and sets the VBlank enable bit in the IE register, it can rely on the CPU automatically jumping to its VBlank handler at 0x0040 every frame. This is more efficient than busy-waiting in a loop.</p>
+
+            <p>The game's interrupt handler typically:</p>
+            <ul>
+                <li>Updates game state for the next frame</li>
+                <li>Copies graphics data to VRAM</li>
+                <li>Updates sound registers</li>
+                <li>Executes <code>RETI</code> to return and re-enable interrupts</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Testing the Fix</h2>
+            
+            <p>Compiling and running with the LCD timing implemented, we see the game escape the infinite loop:</p>
+
+            <pre><code>0233  LDH A, (a8)           -           2  12
+0235  CP $94                Z,1,H,C     2  8
+0237  JR $-6                -           2  12/8
+... (loop repeats many times as LY increments) ...
+0233  LDH A, (a8)           -           2  12
+0235  CP $94                Z,1,H,C     2  8
+0237  JR $-6                -           2  12/8
+0239  LD $03                -           2  8     ← Success! Loop exited!
+023B  LDH (a8), A           -           2  12
+023D  LD $E4                -           2  8
+... (game continues executing) ...
+0250  LD $77                -           2  12
+Unimplemented instruction: 0x36 at PC: 0x0250
+Instructions executed before error: 16016</code></pre>
+
+            <p>Victory! The emulator successfully:</p>
+            <ul>
+                <li>Waited in the VBlank loop as LY incremented from 0 to 147</li>
+                <li>Detected when LY reached 148 (0x94)</li>
+                <li>Exited the loop and continued execution</li>
+                <li>Executed 16,016 instructions total before hitting the next unimplemented opcode</li>
+            </ul>
+
+            <p>This is a major milestone - the emulator now has basic hardware timing, allowing games to synchronize with the display refresh cycle.</p>
+        </section>
+
+        <section>
+            <h2>Beyond the Barrier: New Instructions</h2>
+            
+            <p>With VBlank timing working, Tetris continues past initialization into new code paths. We now encounter a fresh batch of unimplemented instructions that need to be added to reach the next milestone.</p>
+
+            <h3>LD (HL), n8 - Store Immediate to Memory</h3>
+            <p>The first new instruction we hit is opcode 0x36 at address 0x0250: <code>LD (HL), n8</code></p>
+
+            <p>This instruction:</p>
+            <ul>
+                <li>Reads an immediate 8-bit value from the next byte</li>
+                <li>Writes that value to the memory address in the HL register</li>
+                <li>Takes 2 bytes total (opcode + immediate byte)</li>
+                <li>Takes 12 cycles (memory read + memory write)</li>
+            </ul>
+
+            <p>Implementation:</p>
+            <pre><code>// cpu.h
+int ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value);
+
+// cpu.cpp
+int CPU::ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value) {
+    memory.write(addr, value);
+    pc += 2; // Move past the instruction and operand
+    return 12; // LD (HL), n8 takes 12 cycles
+}
+
+// In execute_instruction switch:
+case 0x36: return ld_mem_n8(memory, hl.pair, memory.read(pc + 1)); // LD (HL), n8</code></pre>
+
+            <p>After implementing this instruction, the emulator executes another 38,901 instructions (54,917 total) before hitting the next barrier.</p>
+
+            <h3>LD A, (HL+) - Load from Memory with Auto-Increment</h3>
+            <p>At address 0x029A, we encounter opcode 0x2A: <code>LD A, (HL+)</code></p>
+
+            <p>This instruction is the "read" counterpart to the <code>LD (HL+), A</code> we implemented in Part 1:</p>
+            <ul>
+                <li>Reads the value at memory address HL into register A</li>
+                <li>Increments HL after the read</li>
+                <li>Takes 1 byte (just the opcode)</li>
+                <li>Takes 8 cycles (memory read)</li>
+            </ul>
+
+            <p>This is commonly used for sequential memory reads, like copying data or reading strings. It's more efficient than separate load and increment instructions.</p>
+
+            <p>Implementation:</p>
+            <pre><code>// cpu.h
+int ld_a_hlp(Memory& memory, bool increment);
+
+// cpu.cpp
+int CPU::ld_a_hlp(Memory& memory, bool increment) {
+    af.high = memory.read(hl.pair);
+    hl.pair += increment ? 1 : -1;
+    pc += 1; // Move past the instruction
+    return 8; // LD A, (HL+/-) takes 8 cycles
+}
+
+// In execute_instruction switch:
+case 0x2A: return ld_a_hlp(memory, true);  // LD A, (HL+)
+case 0x3A: return ld_a_hlp(memory, false); // LD A, (HL-)</code></pre>
+
+            <p>Note the forward-thinking design: by adding an <code>increment</code> parameter, we can also handle <code>LD A, (HL-)</code> (opcode 0x3A) when we encounter it, using the same function.</p>
+        </section>
+
+        <section>
+            <h2>Expanding the Instruction Set</h2>
+            
+            <p>After implementing the core memory operations, we encounter many more instructions. Rather than implement them one at a time, we can batch similar instructions together using helper functions.</p>
+
+            <h3>INC r8 - Increment 8-bit Register</h3>
+            <p>At address 0x029C, we hit opcode 0x0C: <code>INC C</code></p>
+
+            <p>This instruction increments an 8-bit register and affects flags:</p>
+            <ul>
+                <li><strong>Z</strong> - Set if result is zero</li>
+                <li><strong>N</strong> - Reset to 0 (it's an addition)</li>
+                <li><strong>H</strong> - Set if carry from bit 3 to bit 4</li>
+                <li><strong>C</strong> - Not affected</li>
+            </ul>
+
+            <p>The half-carry flag requires careful attention. It's set when incrementing causes a carry from the lower nibble (bits 0-3) to the upper nibble (bits 4-7). This happens when the lower nibble is 0xF and wraps to 0x0.</p>
+
+            <p>For example:</p>
+            <ul>
+                <li><code>0x0F + 1 = 0x10</code> → H flag set (carry from bit 3)</li>
+                <li><code>0x1F + 1 = 0x20</code> → H flag set</li>
+                <li><code>0x0E + 1 = 0x0F</code> → H flag clear (no carry)</li>
+            </ul>
+
+            <p>Implementation:</p>
+            <pre><code>// cpu.h
+int inc_r(uint8_t& reg);
+
+// cpu.cpp
+int CPU::inc_r(uint8_t& reg) {
+    reg++;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, (reg & 0x0F) == 0x00);
+    
+    pc += 1; // Move past the instruction
+    return 4; // INC r takes 4 cycles
+}
+
+// In execute_instruction switch:
+case 0x04: return inc_r(bc.high); // INC B
+case 0x0C: return inc_r(bc.low);  // INC C
+case 0x14: return inc_r(de.high); // INC D
+case 0x1C: return inc_r(de.low);  // INC E
+case 0x24: return inc_r(hl.high); // INC H
+case 0x2C: return inc_r(hl.low);  // INC L
+case 0x3C: return inc_r(af.high); // INC A</code></pre>
+
+            <h3>LD (HL), r8 - Store Register to Memory</h3>
+            <p>Multiple instructions write different registers to the memory address in HL. We can reuse our <code>ld_mem_n8()</code> function with appropriate parameters:</p>
+
+            <pre><code>// In execute_instruction switch:
+case 0x70: return ld_mem_n8(memory, hl.pair, bc.high); // LD (HL), B
+case 0x71: return ld_mem_n8(memory, hl.pair, bc.low);  // LD (HL), C
+case 0x72: return ld_mem_n8(memory, hl.pair, de.high); // LD (HL), D
+case 0x73: return ld_mem_n8(memory, hl.pair, de.low);  // LD (HL), E
+case 0x74: return ld_mem_n8(memory, hl.pair, hl.high); // LD (HL), H
+case 0x75: return ld_mem_n8(memory, hl.pair, hl.low);  // LD (HL), L
+case 0x77: return ld_mem_n8(memory, hl.pair, af.high); // LD (HL), A</code></pre>
+
+            <p>Note that opcode 0x76 (<code>LD (HL), (HL)</code>) doesn't exist - it's actually the HALT instruction!</p>
+
+            <h3>LD (rr), A - Store Accumulator to Register Pair Address</h3>
+            <p>Similar to <code>LD (HL), A</code>, we can store the accumulator to addresses in BC and DE:</p>
+
+            <pre><code>// In execute_instruction switch:
+case 0x02: return ld_mem_n8(memory, bc.pair, af.high); // LD (BC), A
+case 0x12: return ld_mem_n8(memory, de.pair, af.high); // LD (DE), A</code></pre>
+
+            <h3>LD (a16), A - Store Accumulator to Immediate Address</h3>
+            <p>For opcode 0xEA, we store A to a 16-bit immediate address:</p>
+
+            <pre><code>// In execute_instruction switch:
+case 0xEA: return ld_mem_n8(memory, memory.read_word(pc + 1), af.high, 3, 16); // LD (a16), A</code></pre>
+
+            <p>Note the different parameters: 3 bytes (opcode + 2-byte address) and 16 cycles.</p>
+
+            <h3>CALL a16 - Call Subroutine</h3>
+            <p>At address 0x02A0, we encounter opcode 0xCD: <code>CALL a16</code></p>
+
+            <p>CALL is fundamental to function calls in assembly. It:</p>
+            <ul>
+                <li>Pushes the return address (PC + 3) onto the stack</li>
+                <li>Jumps to the target address</li>
+                <li>Takes 3 bytes (opcode + 2-byte address)</li>
+                <li>Takes 24 cycles if taken, 12 cycles if not (conditional variants)</li>
+            </ul>
+
+            <p>The stack grows downward, so we:</p>
+            <ol>
+                <li>Decrement SP by 2</li>
+                <li>Write the return address to [SP] (little-endian)</li>
+                <li>Set PC to the target address</li>
+            </ol>
+
+            <p>Implementation:</p>
+            <pre><code>// cpu.h
+int call_a16(Memory& memory, uint16_t addr, bool condition = true);
+
+// cpu.cpp
+int CPU::call_a16(Memory& memory, uint16_t addr, bool condition) {
+    if(condition) {
+        sp -= 2;
+        // Push return address onto stack
+        memory.write_word(sp, pc + 3); // +3 to skip past CALL instruction
+        pc = addr;
+        return 24; // CALL takes 24 cycles if taken
+    } else {
+        pc += 3; // Move past the instruction and operands
+        return 12; // CALL takes 12 cycles if not taken
+    }
+}
+
+// In execute_instruction switch:
+case 0xCC: return call_a16(memory, memory.read_word(pc + 1), get_flag(af.low, FLAG_ZERO));    // CALL Z, a16
+case 0xCD: return call_a16(memory, memory.read_word(pc + 1));                                  // CALL a16
+case 0xDC: return call_a16(memory, memory.read_word(pc + 1), get_flag(af.low, FLAG_CARRY));   // CALL C, a16</code></pre>
+
+            <p>The conditional CALL instructions (CALL Z, CALL NZ, CALL C, CALL NC) use the same function with different flag conditions, similar to conditional jumps.</p>
+        </section>
+
+        <section>
+            <h2>Progress Update</h2>
+            
+            <p>After implementing all these instructions, Tetris executes successfully through initialization and enters the subroutine at 0x2795:</p>
+
+            <pre><code>02A0  CALL $2795            -           3  24
+2795  LD $9BFF              -           3  12
+2798  LD $0400              -           3  12
+279B  LD $2F                -           2  8
+279D  LD (HL-), A           -           1  8
+279E  DEC BC                -           1  8
+Unimplemented instruction: 0x0B at PC: 0x279E
+Instructions executed before error: 54982</code></pre>
+
+            <p>The emulator has now executed 54,982 instructions - over 3.4× more than before implementing VBlank timing.</p>
+            
+            <h3>DEC rr - Decrement 16-bit Register Pair</h3>
+            <p>At address 0x279E, we encounter opcode 0x0B: <code>DEC BC</code></p>
+
+            <p>This instruction decrements a 16-bit register pair:</p>
+            <ul>
+                <li>Decrements the entire 16-bit value</li>
+                <li>Takes 1 byte (just the opcode)</li>
+                <li>Takes 8 cycles</li>
+                <li><strong>No flags are affected</strong> (unlike 8-bit DEC)</li>
+            </ul>
+
+            <p>Implementation:</p>
+            <pre><code>// cpu.h
+int dec_rr(uint16_t& regpair);
+
+// cpu.cpp
+int CPU::dec_rr(uint16_t& regpair) {
+    regpair--;
+    pc += 1; // Move past the instruction
+    return 8; // DEC rr takes 8 cycles
+}
+
+// In execute_instruction switch:
+case 0x0B: return dec_rr(bc.pair); // DEC BC
+case 0x1B: return dec_rr(de.pair); // DEC DE
+case 0x2B: return dec_rr(hl.pair); // DEC HL
+case 0x3B: return dec_rr(sp);      // DEC SP</code></pre>
+
+            <h3>LD r, r - Register to Register Load (48 Opcodes)</h3>
+            <p>After implementing DEC BC, we hit opcode 0x78 at address 0x279F: <code>LD A, B</code></p>
+
+            <p>This is part of a large family of register-to-register load instructions covering opcodes 0x40-0x7F (excluding 0x76 HALT). These instructions copy values between any two 8-bit registers: B, C, D, E, H, L, and A.</p>
+
+            <h4>Refactoring for Efficiency</h4>
+            <p>Rather than creating a new function, we can refactor our existing <code>ld_r_n8()</code> function to handle both immediate loads and register-to-register loads by adding optional parameters:</p>
+
+            <pre><code>// cpu.h
+int ld_r_n8(uint8_t& dest, uint8_t value, int length = 2, int cycles = 8);
+
+// cpu.cpp
+int CPU::ld_r_n8(uint8_t& dest, uint8_t value, int length, int cycles) {
+    dest = value;
+    pc += length; // Move past the instruction and operand
+    return cycles; // Return the cycle count
+}</code></pre>
+
+            <p>Now we can use this function for both:</p>
+            <ul>
+                <li><strong>LD r, n8</strong> (immediate): <code>ld_r_n8(dest, memory.read(pc + 1))</code> → 2 bytes, 8 cycles (defaults)</li>
+                <li><strong>LD r, r</strong> (register): <code>ld_r_n8(dest, src_register, 1, 4)</code> → 1 byte, 4 cycles</li>
+                <li><strong>LD r, (HL)</strong> (memory): <code>ld_r_n8(dest, memory.read(hl.pair), 1, 8)</code> → 1 byte, 8 cycles</li>
+            </ul>
+
+            <h4>Complete Implementation</h4>
+            <p>With the refactored function, we can implement all 48 LD r, r opcodes concisely:</p>
+
+            <pre><code>// In execute_instruction switch:
+
+// LD B, r family (0x40-0x47)
+case 0x40: return ld_r_n8(bc.high, bc.high, 1, 4);              // LD B, B
+case 0x41: return ld_r_n8(bc.high, bc.low, 1, 4);               // LD B, C
+case 0x42: return ld_r_n8(bc.high, de.high, 1, 4);              // LD B, D
+case 0x43: return ld_r_n8(bc.high, de.low, 1, 4);               // LD B, E
+case 0x44: return ld_r_n8(bc.high, hl.high, 1, 4);              // LD B, H
+case 0x45: return ld_r_n8(bc.high, hl.low, 1, 4);               // LD B, L
+case 0x46: return ld_r_n8(bc.high, memory.read(hl.pair), 1, 8); // LD B, (HL)
+case 0x47: return ld_r_n8(bc.high, af.high, 1, 4);              // LD B, A
+
+// LD C, r family (0x48-0x4F)
+case 0x48: return ld_r_n8(bc.low, bc.high, 1, 4);               // LD C, B
+case 0x49: return ld_r_n8(bc.low, bc.low, 1, 4);                // LD C, C
+case 0x4A: return ld_r_n8(bc.low, de.high, 1, 4);               // LD C, D
+case 0x4B: return ld_r_n8(bc.low, de.low, 1, 4);                // LD C, E
+case 0x4C: return ld_r_n8(bc.low, hl.high, 1, 4);               // LD C, H
+case 0x4D: return ld_r_n8(bc.low, hl.low, 1, 4);                // LD C, L
+case 0x4E: return ld_r_n8(bc.low, memory.read(hl.pair), 1, 8);  // LD C, (HL)
+case 0x4F: return ld_r_n8(bc.low, af.high, 1, 4);               // LD C, A
+
+// LD D, r family (0x50-0x57)
+case 0x50: return ld_r_n8(de.high, bc.high, 1, 4);              // LD D, B
+case 0x51: return ld_r_n8(de.high, bc.low, 1, 4);               // LD D, C
+case 0x52: return ld_r_n8(de.high, de.high, 1, 4);              // LD D, D
+case 0x53: return ld_r_n8(de.high, de.low, 1, 4);               // LD D, E
+case 0x54: return ld_r_n8(de.high, hl.high, 1, 4);              // LD D, H
+case 0x55: return ld_r_n8(de.high, hl.low, 1, 4);               // LD D, L
+case 0x56: return ld_r_n8(de.high, memory.read(hl.pair), 1, 8); // LD D, (HL)
+case 0x57: return ld_r_n8(de.high, af.high, 1, 4);              // LD D, A
+
+// LD E, r family (0x58-0x5F)
+case 0x58: return ld_r_n8(de.low, bc.high, 1, 4);               // LD E, B
+case 0x59: return ld_r_n8(de.low, bc.low, 1, 4);                // LD E, C
+case 0x5A: return ld_r_n8(de.low, de.high, 1, 4);               // LD E, D
+case 0x5B: return ld_r_n8(de.low, de.low, 1, 4);                // LD E, E
+case 0x5C: return ld_r_n8(de.low, hl.high, 1, 4);               // LD E, H
+case 0x5D: return ld_r_n8(de.low, hl.low, 1, 4);                // LD E, L
+case 0x5E: return ld_r_n8(de.low, memory.read(hl.pair), 1, 8);  // LD E, (HL)
+case 0x5F: return ld_r_n8(de.low, af.high, 1, 4);               // LD E, A
+
+// LD H, r family (0x60-0x67)
+case 0x60: return ld_r_n8(hl.high, bc.high, 1, 4);              // LD H, B
+case 0x61: return ld_r_n8(hl.high, bc.low, 1, 4);               // LD H, C
+case 0x62: return ld_r_n8(hl.high, de.high, 1, 4);              // LD H, D
+case 0x63: return ld_r_n8(hl.high, de.low, 1, 4);               // LD H, E
+case 0x64: return ld_r_n8(hl.high, hl.high, 1, 4);              // LD H, H
+case 0x65: return ld_r_n8(hl.high, hl.low, 1, 4);               // LD H, L
+case 0x66: return ld_r_n8(hl.high, memory.read(hl.pair), 1, 8); // LD H, (HL)
+case 0x67: return ld_r_n8(hl.high, af.high, 1, 4);              // LD H, A
+
+// LD L, r family (0x68-0x6F)
+case 0x68: return ld_r_n8(hl.low, bc.high, 1, 4);               // LD L, B
+case 0x69: return ld_r_n8(hl.low, bc.low, 1, 4);                // LD L, C
+case 0x6A: return ld_r_n8(hl.low, de.high, 1, 4);               // LD L, D
+case 0x6B: return ld_r_n8(hl.low, de.low, 1, 4);                // LD L, E
+case 0x6C: return ld_r_n8(hl.low, hl.high, 1, 4);               // LD L, H
+case 0x6D: return ld_r_n8(hl.low, hl.low, 1, 4);                // LD L, L
+case 0x6E: return ld_r_n8(hl.low, memory.read(hl.pair), 1, 8);  // LD L, (HL)
+case 0x6F: return ld_r_n8(hl.low, af.high, 1, 4);               // LD L, A
+
+// LD A, r family (0x78-0x7F, note: 0x70-0x77 are LD (HL), r)
+case 0x78: return ld_r_n8(af.high, bc.high, 1, 4);              // LD A, B
+case 0x79: return ld_r_n8(af.high, bc.low, 1, 4);               // LD A, C
+case 0x7A: return ld_r_n8(af.high, de.high, 1, 4);              // LD A, D
+case 0x7B: return ld_r_n8(af.high, de.low, 1, 4);               // LD A, E
+case 0x7C: return ld_r_n8(af.high, hl.high, 1, 4);              // LD A, H
+case 0x7D: return ld_r_n8(af.high, hl.low, 1, 4);               // LD A, L
+case 0x7E: return ld_r_n8(af.high, memory.read(hl.pair), 1, 8); // LD A, (HL)
+case 0x7F: return ld_r_n8(af.high, af.high, 1, 4);              // LD A, A</code></pre>
+
+            <h4>Statistics</h4>
+            <p>This single refactoring adds <strong>56 opcodes</strong> to our emulator:</p>
+            <ul>
+                <li>48 register-to-register loads (LD r, r)</li>
+                <li>8 memory-to-register loads (LD r, (HL))</li>
+            </ul>
+
+            <p>Combined with the existing LD r, n8 instructions, we now have complete coverage of all 8-bit register load operations.</p>
+        </section>
+
+            <h3>OR r - Bitwise OR with Accumulator</h3>
+            <p>After successfully implementing the LD r, r family, we encounter opcode 0xB1 at address 0x27A0: <code>OR C</code></p>
+
+            <p>The OR instruction performs a bitwise OR operation between the accumulator (A) and another value, storing the result in A. This is commonly used for:</p>
+            <ul>
+                <li>Setting specific bits in a value</li>
+                <li>Combining bit flags</li>
+                <li>Testing if any register in a pair is non-zero (e.g., <code>LD A, B</code> followed by <code>OR C</code> to check if BC is zero)</li>
+            </ul>
+
+            <h4>Flag Behavior</h4>
+            <p>The OR instruction affects all four flags:</p>
+            <ul>
+                <li><strong>Z</strong> - Set if result is zero (A = 0 after operation)</li>
+                <li><strong>N</strong> - Always reset (it's a logical operation, not subtraction)</li>
+                <li><strong>H</strong> - Always reset (no half-carry in logical operations)</li>
+                <li><strong>C</strong> - Always reset (no carry in logical operations)</li>
+            </ul>
+
+            <h4>Implementation</h4>
+            <p>Following the same pattern as XOR, we implement OR with parameterized length and cycles:</p>
+
+            <pre><code>// cpu.h
+int or_a(uint8_t value, int length = 1, int cycles = 4);
+
+// cpu.cpp
+int CPU::or_a(uint8_t value, int length, int cycles) {
+    af.high |= value;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, af.high == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+    
+    pc += length; // Move past the instruction and operands
+    return cycles; // Return the cycle count
+}
+
+// In execute_instruction switch:
+case 0xB0: return or_a(bc.high);                     // OR B
+case 0xB1: return or_a(bc.low);                      // OR C
+case 0xB2: return or_a(de.high);                     // OR D
+case 0xB3: return or_a(de.low);                      // OR E
+case 0xB4: return or_a(hl.high);                     // OR H
+case 0xB5: return or_a(hl.low);                      // OR L
+case 0xB6: return or_a(memory.read(hl.pair), 1, 8);  // OR (HL)
+case 0xB7: return or_a(af.high);                     // OR A</code></pre>
+
+            <h4>Practical Usage in Tetris</h4>
+            <p>At address 0x279B-0x27A1, Tetris uses a memory-fill loop:</p>
+
+            <pre><code>279B  LD A, $2F             ; Load value to fill
+279D  LD (HL-), A           ; Write to memory, decrement HL
+279E  DEC BC                ; Decrement counter
+279F  LD A, B               ; Load B into A
+27A0  OR C                  ; OR with C
+27A1  JR NZ, $-8            ; Loop if BC != 0</code></pre>
+
+            <p>The <code>LD A, B</code> + <code>OR C</code> combination is a clever way to test if a 16-bit register pair is zero. Since OR sets the Z flag only when the result is zero, this checks if both B and C are zero (meaning BC = 0). This is more efficient than checking each byte separately.</p>
+        </section>
+
+        <section>
+            <h2>RET Family</h2>
+            <p>After the memory fill loop at 0x27A3, Tetris returns from the subroutine using RET. The RET instruction pops a return address from the stack and jumps to it.</p>
+
+            <h3>RET Implementation</h3>
+            <p>We consolidated all RET variants (RET, conditional RETs, and RETI) into a single parameterized function:</p>
+
+            <pre><code>int CPU::ret(Memory& memory, bool condition, int cycles_if_taken, bool enable_interrupts) {
+    if (condition) {
+        pc = memory.read_word(sp);  // Pop return address (little-endian)
+        sp += 2;                     // Increment stack pointer
+        if (enable_interrupts) {
+            ime = true;              // RETI re-enables interrupts
+        }
+        return cycles_if_taken;
+    } else {
+        pc += 1;
+        return 8;
+    }
+}</code></pre>
+
+            <h4>RET Timing Quirk</h4>
+            <p>RET has an unusual timing characteristic on the Game Boy:</p>
+            <ul>
+                <li><strong>Unconditional RET (0xC9):</strong> 16 cycles</li>
+                <li><strong>Conditional RET when taken:</strong> 20 cycles (4 more!)</li>
+                <li><strong>Conditional RET when not taken:</strong> 8 cycles</li>
+                <li><strong>RETI (0xD9):</strong> 16 cycles (like unconditional RET)</li>
+            </ul>
+
+            <p>This differs from CALL, where both conditional and unconditional versions take the same cycles when the branch is taken (24 cycles).</p>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0xC0: return ret(memory, !get_flag(af.low, FLAG_ZERO), 20);      // RET NZ
+case 0xC8: return ret(memory, get_flag(af.low, FLAG_ZERO), 20);       // RET Z
+case 0xC9: return ret(memory);                                         // RET (uses defaults: true, 16, false)
+case 0xD0: return ret(memory, !get_flag(af.low, FLAG_CARRY), 20);     // RET NC
+case 0xD8: return ret(memory, get_flag(af.low, FLAG_CARRY), 20);      // RET C
+case 0xD9: return ret(memory, true, 16, true);                         // RETI</code></pre>
+        </section>
+
+        <section>
+            <h2>CPL - Complement Accumulator</h2>
+            <p>At address 0x29B2, Tetris uses CPL to flip all bits in register A. This is the bitwise NOT operation.</p>
+
+            <h3>CPL Implementation</h3>
+            <pre><code>int CPU::cpl() {
+    af.high = ~af.high;  // Bitwise NOT (flip all bits)
+    
+    // CPL always sets N and H flags, leaves Z and C unchanged
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, true);
+    
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h4>Example</h4>
+            <ul>
+                <li>If A = 0x20 (00100000 in binary)</li>
+                <li>CPL makes A = 0xDF (11011111 in binary)</li>
+                <li>Every 0 becomes 1, every 1 becomes 0</li>
+            </ul>
+
+            <h4>Flags</h4>
+            <ul>
+                <li><strong>Z:</strong> Unchanged (not affected)</li>
+                <li><strong>N:</strong> Set to 1 (always)</li>
+                <li><strong>H:</strong> Set to 1 (always)</li>
+                <li><strong>C:</strong> Unchanged (not affected)</li>
+            </ul>
+
+            <h4>Switch Case</h4>
+            <pre><code>case 0x2F: return cpl();  // CPL</code></pre>
+        </section>
+
+        <section>
+            <h2>AND Family</h2>
+            <p>At address 0x29B3, Tetris uses AND to mask the lower nibble of A. The AND instruction performs a bitwise AND operation between A and the operand.</p>
+
+            <h3>AND Implementation</h3>
+            <pre><code>int CPU::and_a(uint8_t value, int length, int cycles) {
+    af.high &= value;  // Bitwise AND
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, af.high == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, true);  // Always set for AND
+    set_flag(af.low, FLAG_CARRY, false);
+    
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <h4>Flags</h4>
+            <ul>
+                <li><strong>Z:</strong> Set if result is 0</li>
+                <li><strong>N:</strong> Reset (always 0)</li>
+                <li><strong>H:</strong> Set (always 1)</li>
+                <li><strong>C:</strong> Reset (always 0)</li>
+            </ul>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0xA0: return and_a(bc.high);                     // AND B
+case 0xA1: return and_a(bc.low);                      // AND C
+case 0xA2: return and_a(de.high);                     // AND D
+case 0xA3: return and_a(de.low);                      // AND E
+case 0xA4: return and_a(hl.high);                     // AND H
+case 0xA5: return and_a(hl.low);                      // AND L
+case 0xA6: return and_a(memory.read(hl.pair), 1, 8);  // AND (HL)
+case 0xA7: return and_a(af.high);                     // AND A
+case 0xE6: return and_a(memory.read(pc + 1), 2, 8);   // AND n8</code></pre>
+        </section>
+
+        <section>
+            <h2>CB Prefix and SWAP</h2>
+            <p>At address 0x29B5, Tetris encounters a CB-prefixed instruction: SWAP A. The CB prefix (opcode 0xCB) introduces 256 extended instructions for bit manipulation, rotations, and shifts.</p>
+
+            <h3>CB Instruction Handler</h3>
+            <p>CB instructions are structured with the lower 3 bits encoding the register:</p>
+            <ul>
+                <li><strong>Bits 0-2:</strong> Register index (0=B, 1=C, 2=D, 3=E, 4=H, 5=L, 6=(HL), 7=A)</li>
+                <li><strong>Bits 3-7:</strong> Operation type</li>
+            </ul>
+
+            <pre><code>int CPU::cb_execute_instruction(Memory& memory) {
+    uint8_t opcode = memory.read(pc + 1);
+    uint8_t reg_index = opcode & 0x07;  // Extract register bits
+    uint8_t* regs[] = {&bc.high, &bc.low, &de.high, &de.low, 
+                       &hl.high, &hl.low, nullptr, &af.high};
+    
+    // SWAP (0x30-0x37) - swap upper and lower nibbles
+    if (opcode >= 0x30 && opcode <= 0x37) {
+        if (reg_index == 6) return swap_mem_hl(memory);
+        return swap_r(*regs[reg_index]);
+    }
+    
+    unimplemented_instruction(0xCB00 | opcode, memory.rom);
+    return -1;
+}</code></pre>
+
+            <h3>SWAP Implementation</h3>
+            <p>SWAP exchanges the upper and lower nibbles (4 bits) of a register:</p>
+
+            <pre><code>int CPU::swap_r(uint8_t& reg) {
+    reg = (reg << 4) | (reg >> 4);  // Swap nibbles
+    
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+    
+    pc += 2;  // CB instructions are 2 bytes
+    return 8;
+}
+
+int CPU::swap_mem_hl(Memory& memory) {
+    uint8_t value = memory.read(hl.pair);
+    value = (value << 4) | (value >> 4);
+    memory.write(hl.pair, value);
+    
+    // Set same flags
+    set_flag(af.low, FLAG_ZERO, value == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+    
+    pc += 2;
+    return 16;  // Memory variant takes 16 cycles
+}</code></pre>
+
+            <h4>Example</h4>
+            <ul>
+                <li>If A = 0x0F (00001111 in binary)</li>
+                <li>SWAP A makes A = 0xF0 (11110000 in binary)</li>
+                <li>Upper nibble (0) and lower nibble (F) are swapped</li>
+            </ul>
+
+            <h4>Practical Usage in Tetris</h4>
+            <p>At 0x29B3-0x29B5, Tetris manipulates nibbles for LCD register access:</p>
+            <pre><code>29B2  CPL                   ; Flip all bits (0x20 → 0xDF)
+29B3  AND $0F               ; Mask lower nibble (0xDF → 0x0F)
+29B5  SWAP A                ; Swap nibbles (0x0F → 0xF0)</code></pre>
+        </section>
+
+        <section>
+            <h2>RST (ReSTart)</h2>
+            <p>At address 0x02FA, Tetris uses RST 28H to call a fixed routine. RST is a compact 1-byte alternative to CALL that jumps to one of 8 fixed addresses in the zero page.</p>
+
+            <h3>RST Implementation</h3>
+            <pre><code>int CPU::rst(Memory& memory, uint8_t addr) {
+    sp -= 2;
+    memory.write_word(sp, pc + 1);  // Push return address
+    pc = addr;                       // Jump to fixed address
+    return 16;
+}</code></pre>
+
+            <h4>The 8 RST Addresses</h4>
+            <ul>
+                <li><strong>RST 00H (0xC7):</strong> Jump to 0x0000</li>
+                <li><strong>RST 08H (0xCF):</strong> Jump to 0x0008</li>
+                <li><strong>RST 10H (0xD7):</strong> Jump to 0x0010</li>
+                <li><strong>RST 18H (0xDF):</strong> Jump to 0x0018</li>
+                <li><strong>RST 20H (0xE7):</strong> Jump to 0x0020</li>
+                <li><strong>RST 28H (0xEF):</strong> Jump to 0x0028</li>
+                <li><strong>RST 30H (0xF7):</strong> Jump to 0x0030</li>
+                <li><strong>RST 38H (0xFF):</strong> Jump to 0x0038</li>
+            </ul>
+
+            <p>RST saves 2 bytes per call compared to CALL (1 byte vs 3 bytes), making it ideal for frequently called routines and interrupt handlers.</p>
+        </section>
+
+        <section>
+            <h2>ADD Family</h2>
+            <p>At address 0x0028, Tetris uses ADD A, A to double the value in A. The ADD instruction adds a value to register A, setting flags based on the result.</p>
+
+            <h3>ADD Implementation</h3>
+            <pre><code>int CPU::add_a(uint8_t value, int length, int cycles) {
+    uint16_t result = static_cast&lt;uint16_t&gt;(af.high) + static_cast&lt;uint16_t&gt;(value);
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, ((af.high & 0x0F) + (value & 0x0F)) > 0x0F);
+    set_flag(af.low, FLAG_CARRY, result > 0xFF);
+    
+    af.high = static_cast&lt;uint8_t&gt;(result & 0xFF);
+    
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <h4>Flags</h4>
+            <ul>
+                <li><strong>Z:</strong> Set if result is 0 (after truncation to 8 bits)</li>
+                <li><strong>N:</strong> Reset (always 0 for addition)</li>
+                <li><strong>H:</strong> Set if carry from bit 3 to bit 4</li>
+                <li><strong>C:</strong> Set if carry from bit 7 (result > 0xFF)</li>
+            </ul>
+
+            <h4>Key Details</h4>
+            <p>Uses uint16_t for calculation to detect overflow. Half-carry checks lower nibbles (bits 0-3) for carry.</p>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0x80: return add_a(bc.high);                     // ADD A, B
+case 0x81: return add_a(bc.low);                      // ADD A, C
+case 0x82: return add_a(de.high);                     // ADD A, D
+case 0x83: return add_a(de.low);                      // ADD A, E
+case 0x84: return add_a(hl.high);                     // ADD A, H
+case 0x85: return add_a(hl.low);                      // ADD A, L
+case 0x86: return add_a(memory.read(hl.pair), 1, 8);  // ADD A, (HL)
+case 0x87: return add_a(af.high);                     // ADD A, A
+case 0xC6: return add_a(memory.read(pc + 1), 2, 8);   // ADD A, n8</code></pre>
+        </section>
+
+        <section>
+            <h2>POP Family</h2>
+            <p>At address 0x0029, Tetris uses POP HL to restore HL from the stack. POP instructions restore 16-bit register pairs that were previously saved with PUSH.</p>
+
+            <h3>POP Implementation</h3>
+            <pre><code>int CPU::pop_rr(Memory& memory, uint16_t& dest) {
+    dest = memory.read_word(sp);  // Read 16-bit value (little-endian)
+    sp += 2;                       // Grow stack upward
+    pc += 1;
+    return 12;
+}</code></pre>
+
+            <h4>Key Details</h4>
+            <p>POP AF is special: it directly restores the flags register (F) along with A. The low byte from the stack overwrites all CPU flags automatically - no special flag handling needed.</p>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0xC1: return pop_rr(memory, bc.pair);  // POP BC
+case 0xD1: return pop_rr(memory, de.pair);  // POP DE
+case 0xE1: return pop_rr(memory, hl.pair);  // POP HL
+case 0xF1: return pop_rr(memory, af.pair);  // POP AF - restores flags</code></pre>
+        </section>
+
+        <section>
+            <h2>Additional Load Instructions</h2>
+            <p>Filled in missing load instructions that use existing function implementations:</p>
+            <pre><code>case 0x0A: return ld_r_n8(af.high, memory.read(bc.pair), 1, 8); // LD A, (BC)
+case 0x1A: return ld_r_n8(af.high, memory.read(de.pair), 1, 8); // LD A, (DE)
+case 0xC4: return call_a16(memory, memory.read_word(pc + 1), !get_flag(af.low, FLAG_ZERO)); // CALL NZ, a16
+case 0xD4: return call_a16(memory, memory.read_word(pc + 1), !get_flag(af.low, FLAG_CARRY)); // CALL NC, a16</code></pre>
+        </section>
+
+        <section>
+            <h2>ADD HL, rr - 16-bit Addition</h2>
+            <p>At address 0x0330, Tetris uses ADD HL, BC to add BC to HL. This is the 16-bit counterpart to ADD A, performing addition on register pairs.</p>
+
+            <h3>ADD HL Implementation</h3>
+            <pre><code>int CPU::add_hl_rr(uint16_t value) {
+    uint32_t result = static_cast&lt;uint32_t&gt;(hl.pair) + static_cast&lt;uint32_t&gt;(value);
+    
+    // Set flags
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, ((hl.pair & 0x0FFF) + (value & 0x0FFF)) > 0x0FFF);
+    set_flag(af.low, FLAG_CARRY, result > 0xFFFF);
+    // Z flag is not affected
+    
+    hl.pair = static_cast&lt;uint16_t&gt;(result);
+    
+    pc += 1;
+    return 8;
+}</code></pre>
+
+            <h4>Flags</h4>
+            <ul>
+                <li><strong>Z:</strong> Not affected (preserved)</li>
+                <li><strong>N:</strong> Reset (always 0 for addition)</li>
+                <li><strong>H:</strong> Set if carry from bit 11 to bit 12</li>
+                <li><strong>C:</strong> Set if carry from bit 15 (result > 0xFFFF)</li>
+            </ul>
+
+            <h4>Key Details</h4>
+            <p>Uses uint32_t to detect 16-bit overflow. Half-carry checks bits 0-11 for carry into bit 12. The cast to uint16_t automatically truncates - no explicit mask needed.</p>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0x09: return add_hl_rr(bc.pair);  // ADD HL, BC
+case 0x19: return add_hl_rr(de.pair);  // ADD HL, DE
+case 0x29: return add_hl_rr(hl.pair);  // ADD HL, HL (doubles HL)
+case 0x39: return add_hl_rr(sp);       // ADD HL, SP</code></pre>
+        </section>
+
+        <section>
+            <h2>INC rr - Increment 16-bit Register</h2>
+            <p>At address 0x0359, Tetris uses INC HL to increment the HL register pair. Unlike INC r (8-bit), this instruction does not affect any flags.</p>
+
+            <h3>INC rr Implementation</h3>
+            <pre><code>int CPU::inc_rr(uint16_t& regpair) {
+    regpair++;
+    pc += 1;
+    return 8;
+}</code></pre>
+
+            <h4>Key Difference from INC r</h4>
+            <p>The 16-bit INC does <strong>not affect any flags</strong>, unlike 8-bit INC which sets Z, N, and H flags. This is intentional in the Game Boy's design - 16-bit arithmetic operations generally don't affect flags except for ADD HL, rr.</p>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0x03: return inc_rr(bc.pair);  // INC BC
+case 0x13: return inc_rr(de.pair);  // INC DE
+case 0x23: return inc_rr(hl.pair);  // INC HL
+case 0x33: return inc_rr(sp);       // INC SP</code></pre>
+        </section>
+
+        <section>
+            <h2>PUSH rr - Push Register Pair to Stack</h2>
+            <p>At address 0x0498, Tetris uses PUSH BC to save BC on the stack. PUSH is the counterpart to POP, allowing register values to be preserved across function calls.</p>
+
+            <h3>PUSH Implementation</h3>
+            <pre><code>int CPU::push_rr(Memory& memory, uint16_t value) {
+    sp -= 2;                       // Grow stack downward
+    memory.write_word(sp, value);  // Write 16-bit value (little-endian)
+    pc += 1;
+    return 16;
+}</code></pre>
+
+            <h4>Key Details</h4>
+            <ul>
+                <li>Stack grows downward: SP is decremented before writing</li>
+                <li>Value is written in little-endian format (low byte first, then high byte)</li>
+                <li>Takes value parameter (not reference) since we're reading, not modifying</li>
+                <li>No flags are affected</li>
+            </ul>
+
+            <h4>Switch Cases</h4>
+            <pre><code>case 0xC5: return push_rr(memory, bc.pair);  // PUSH BC
+case 0xD5: return push_rr(memory, de.pair);  // PUSH DE
+case 0xE5: return push_rr(memory, hl.pair);  // PUSH HL
+case 0xF5: return push_rr(memory, af.pair);  // PUSH AF - saves flags too</code></pre>
+
+            <p>PUSH AF is particularly useful for interrupt handlers, as it saves both the accumulator and all CPU flags in a single operation.</p>
+        </section>
+
+        <section>
+            <h2>JP (HL) - Indirect Jump</h2>
+            <p>At address 0x0530, Tetris uses JP (HL) for an indirect jump. This instruction sets PC to the value in HL, enabling jump tables and dynamic dispatching.</p>
+
+            <h3>JP (HL) Implementation</h3>
+            <pre><code>int CPU::jp_hl() {
+    pc = hl.pair;  // Direct copy, no increment needed
+    return 4;
+}</code></pre>
+
+            <h4>Key Differences from JP a16</h4>
+            <ul>
+                <li>Only 1 byte (just the opcode)</li>
+                <li>Much faster: 4 cycles vs 16 cycles</li>
+                <li>PC is not incremented - it's directly replaced with HL</li>
+                <li>No conditional variant exists</li>
+                <li>No flags affected</li>
+            </ul>
+
+            <h4>Common Uses</h4>
+            <p>JP (HL) enables:</p>
+            <ul>
+                <li><strong>Jump tables</strong> - Load address into HL, then jump to it</li>
+                <li><strong>State machines</strong> - Store function pointers in memory, load and jump</li>
+                <li><strong>Dynamic dispatch</strong> - Computed jumps based on game state</li>
+            </ul>
+
+            <p>Example jump table pattern:</p>
+            <pre><code>LD A, (state)      ; Load current state
+LD H, $40          ; High byte of jump table
+LD L, A            ; Low byte = state
+LD A, (HL+)        ; Load target low byte
+LD H, (HL)         ; Load target high byte
+LD L, A            ; Move to L
+JP (HL)            ; Jump to state handler</code></pre>
+
+            <h4>Switch Case</h4>
+            <pre><code>case 0xE9: return jp_hl();  // JP (HL)</code></pre>
+        </section>
+
+        <section>
+            <h2>RES b, r - Reset Bit</h2>
+            <p>At address 0x2824, Tetris uses RES 0, A to clear bit 0 of register A. This is part of the CB-prefixed bit manipulation instruction family.</p>
+
+            <h3>RES Implementation</h3>
+            <pre><code>int CPU::res(uint8_t bit, uint8_t& reg) {
+    reg &= ~(1 << bit);  // Clear bit using AND with negated mask
+    pc += 2;              // CB instructions are 2 bytes
+    return 8;
+}
+
+int CPU::res_mem_hl(Memory& memory, uint8_t bit) {
+    uint8_t value = memory.read(hl.pair);
+    value &= ~(1 << bit);
+    memory.write(hl.pair, value);
+    pc += 2;
+    return 16;  // Memory variant takes 16 cycles
+}</code></pre>
+
+            <h3>CB Prefix Handler Enhancement</h3>
+            <p>RES instructions occupy opcodes 0xCB80-0xCBBF (64 opcodes total). Rather than creating 64 switch cases, we use a range check:</p>
+
+            <pre><code>int CPU::cb_execute_instruction(Memory& memory) {
+    uint8_t opcode = memory.read(pc + 1);
+    uint8_t reg_index = opcode & 0x07;
+    uint8_t* regs[] = {&bc.high, &bc.low, &de.high, &de.low, 
+                       &hl.high, &hl.low, nullptr, &af.high};
+    
+    // RES b, r (0x80-0xBF) - reset (clear) bit
+    if (opcode >= 0x80 && opcode <= 0xBF) {
+        uint8_t bit = (opcode - 0x80) / 8;  // Extract bit 0-7
+        if (reg_index == 6) return res_mem_hl(memory, bit);
+        return res(bit, *regs[reg_index]);
+    }
+    
+    // ... other CB instructions
+}</code></pre>
+
+            <h4>Bit Extraction Formula</h4>
+            <p>The formula <code>(opcode - 0x80) / 8</code> extracts which bit to reset:</p>
+            <ul>
+                <li>0xCB80-0xCB87: RES 0, r (bit 0)</li>
+                <li>0xCB88-0xCB8F: RES 1, r (bit 1)</li>
+                <li>0xCB90-0xCB97: RES 2, r (bit 2)</li>
+                <li>... and so on up to bit 7</li>
+            </ul>
+
+            <h4>How RES Works</h4>
+            <p>RES clears a specific bit using bitwise AND with a negated mask:</p>
+            <pre><code>// Example: RES 2, A (clear bit 2)
+1 << 2        = 0b00000100  (mask with bit 2 set)
+~(1 << 2)     = 0b11111011  (negated mask - all bits set except 2)
+A & 0b11111011              (AND clears bit 2, preserves others)</code></pre>
+
+            <h4>Flags</h4>
+            <p>RES does not affect any flags. This makes it useful for bit manipulation without disrupting flag-dependent code.</p>
+
+            <h4>Common Uses</h4>
+            <ul>
+                <li><strong>Clear status bits</strong> - Turn off flags in game state bytes</li>
+                <li><strong>Hardware control</strong> - Disable specific hardware features via I/O registers</li>
+                <li><strong>Bit masking</strong> - Selectively clear bits in data</li>
+            </ul>
+
+            <h4>Related Instructions</h4>
+            <p>The complete bit manipulation family includes:</p>
+            <ul>
+                <li><strong>BIT b, r</strong> (0xCB40-0xCB7F) - Test if bit is set</li>
+                <li><strong>RES b, r</strong> (0xCB80-0xCBBF) - Clear bit (implemented)</li>
+                <li><strong>SET b, r</strong> (0xCBC0-0xCBFF) - Set bit to 1</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Implementing LD A, (a16)</h2>
+            <p>After implementing VBlank timing, Tetris progressed to instruction <code>0xFA</code> (LD A, (a16)) at PC 0x64D7. This instruction loads the accumulator from a 16-bit immediate address.</p>
+
+            <h3>The Instruction</h3>
+            <ul>
+                <li><strong>Opcode:</strong> 0xFA</li>
+                <li><strong>Format:</strong> LD A, (a16)</li>
+                <li><strong>Length:</strong> 3 bytes (opcode + 2-byte address)</li>
+                <li><strong>Cycles:</strong> 16</li>
+                <li><strong>Operation:</strong> Load A from memory at immediate 16-bit address</li>
+            </ul>
+
+            <h3>Code Reuse</h3>
+            <p>This instruction can leverage our existing <code>ld_r_n8</code> function with nested memory reads:</p>
+
+            <pre><code>case 0xFA: return ld_r_n8(af.high, memory.read(memory.read_word(pc + 1)), 3, 16);</code></pre>
+
+            <p>The nested call works like this:</p>
+            <ol>
+                <li><code>memory.read_word(pc + 1)</code> - Read the 16-bit address from instruction bytes</li>
+                <li><code>memory.read(...)</code> - Read the byte at that address</li>
+                <li><code>ld_r_n8(af.high, ...)</code> - Load the byte into the accumulator</li>
+            </ol>
+
+        </section>
+
+        <section>
+            <h2>INC (HL) - Increment Memory at HL</h2>
+            <p>The INC (HL) instruction increments the value at the memory location pointed to by the HL register. Unlike register-only INC, this requires reading from memory, modifying the value, and writing it back.</p>
+
+            <h3>Implementation</h3>
+            <pre><code>// cpu.h
+int inc_mem_hl(Memory& memory);
+
+// cpu.cpp
+int CPU::inc_mem_hl(Memory& memory) {
+    uint8_t value = memory.read(hl.pair);
+    value++;
+    
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, value == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, (value & 0x0F) == 0x00);
+    
+    memory.write(hl.pair, value);
+    pc += 1;
+    return 12;  // Memory operations take 12 cycles
+}
+
+// In execute_instruction switch:
+case 0x34: return inc_mem_hl(memory);  // INC (HL)</code></pre>
+
+            <h4>Key Details</h4>
+            <ul>
+                <li><strong>Opcode:</strong> 0x34</li>
+                <li><strong>Length:</strong> 1 byte</li>
+                <li><strong>Cycles:</strong> 12 (memory read + memory write)</li>
+                <li><strong>Flags:</strong> Z, N, H affected; C not affected (same as INC r)</li>
+            </ul>
+
+            <h4>Memory Operations</h4>
+            <p>Memory-based increment requires three operations:</p>
+            <ol>
+                <li>Read the current value from memory at address HL</li>
+                <li>Increment the value and set flags</li>
+                <li>Write the modified value back to memory</li>
+            </ol>
+
+            <p>This is why it takes 12 cycles instead of the 4 cycles for register-only INC - memory access is slower than register access.</p>
+        </section>
+
+        <section>
+            <h2>Final Progress Summary</h2>
+            <p>Instructions implemented in this session:</p>
+            <ul>
+                <li>DEC rr (4 opcodes) - 16-bit register pair decrement</li>
+                <li>LD r, r family (56 opcodes) - Register-to-register and memory-to-register loads</li>
+                <li>OR r family (8 opcodes) - Bitwise OR operations</li>
+                <li>RET family (6 opcodes) - Return from subroutine (RET, conditional RETs, RETI)</li>
+                <li>CPL (1 opcode) - Complement accumulator (bitwise NOT)</li>
+                <li>AND family (9 opcodes) - Bitwise AND operations</li>
+                <li>CB prefix infrastructure - Extended instruction handler</li>
+                <li>SWAP (2 opcodes) - Swap upper and lower nibbles</li>
+                <li>RST family (8 opcodes) - Compact calls to fixed addresses</li>
+                <li>ADD family (9 opcodes) - 8-bit addition with A</li>
+                <li>POP family (4 opcodes) - Restore register pairs from stack</li>
+                <li>Additional loads (4 opcodes) - LD A,(BC), LD A,(DE), conditional CALLs</li>
+                <li>ADD HL, rr (4 opcodes) - 16-bit addition to HL</li>
+                <li>INC rr (4 opcodes) - 16-bit increment without flag changes</li>
+                <li>PUSH rr (4 opcodes) - Push register pairs to stack</li>
+                <li>JP (HL) (1 opcode) - Indirect jump via HL register</li>
+                <li>RES b, r (64 opcodes) - Clear specific bits in registers</li>
+                <li>LD A, (a16) (1 opcode) - Load accumulator from 16-bit immediate address</li>
+                <li>INC (HL) (1 opcode) - Increment value at memory location HL</li>
+            </ul>
+            
+            <p>Total opcodes: <strong>~190</strong> (approximately 74% of the instruction set)</p>
+            
+            <h3>Current State: Running Tetris</h3>
+            <p>With these implementations complete, the emulator successfully boots Tetris and runs the game! The emulator:</p>
+            <ul>
+                <li>Completes ROM initialization routines</li>
+                <li>Handles VBlank interrupts correctly</li>
+                <li>Executes the main game loop</li>
+                <li>Reads joypad input (register 0xFF00) looking for button presses</li>
+                <li>Updates LCD control registers</li>
+            </ul>
+            
+            <p>Analysis of execution traces shows the game has progressed past initialization and is most likely sitting at the <strong>title screen</strong>, actively reading the joypad register and waiting for player input.</p>
+            
+            <p>Without graphics rendering or joypad input implementation, we can't see or interact with the game yet, but the core emulation is working correctly. The next major features to implement would be graphics rendering (to visualize what's happening) or joypad input handling (to interact with the game).</p>
+            
+            <p><strong>Note:</strong> While we've implemented ~74% of the instruction set, there are likely still unimplemented instructions that we haven't encountered yet. The game is currently stuck at the title screen waiting for input, so we're not exercising all possible code paths. As we implement additional system components (graphics, input, sound), the game will progress further and may execute instructions we haven't implemented yet.</p>
+            
+            <h3>Full Implementation</h3>
+            <p>
+                The code for VBlank timing, interrupt handling, and the instructions can be found on the 
+                <a href="https://github.com/lasiqueira/gbemu/tree/instructions_tetris_2" target="_blank">instructions_tetris_2 branch</a>.
+            </p>
+        </section>
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <a href="instructions_part1.html">← Instructions - Part 1</a>
+        <span class="disabled">Next →</span>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>
