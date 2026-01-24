@@ -49,14 +49,6 @@ void GameBoy::update_lcd(int cycles) {
         }
         
         memory.write(IO_LY, ly); // Update LY register in memory
-        
-#ifdef GBEMU_DEBUG
-        // Debug: Print when LY reaches 145
-        static int debug_counter = 0;
-        if (ly == 145 && ++debug_counter <= 5) {
-            std::println("DEBUG: LY reached 145 (count: {})", debug_counter);
-        }
-#endif
     }
 }
 
@@ -118,12 +110,7 @@ void GameBoy::run() {
             return; // Exit on error
         }
         frames_executed++;
-        
-        // Print progress every 60 frames (roughly 1 second)
-        if (frames_executed % 60 == 0) {
-            std::println("Frame {}...", frames_executed);
-        }
-        
+    
         // TODO: Render frame, handle input, etc.
     }
     
