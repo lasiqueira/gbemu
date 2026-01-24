@@ -18,19 +18,23 @@ namespace disassembler
         std::string formatted_operands = operands;
         if (length == 2 && formatted_operands.find("n8") != std::string::npos)
         {
-            formatted_operands = std::format("${:02X}", bytes[1]);
+            size_t pos = formatted_operands.find("n8");
+            formatted_operands.replace(pos, 2, std::format("${:02X}", bytes[1]));
         }
         else if (length == 2 && formatted_operands.find("e8") != std::string::npos)
         {
-            formatted_operands = std::format("${:02X}", static_cast<int8_t>(bytes[1]));
+            size_t pos = formatted_operands.find("e8");
+            formatted_operands.replace(pos, 2, std::format("${:02X}", static_cast<int8_t>(bytes[1])));
         }
         else if (length == 3 && formatted_operands.find("n16") != std::string::npos)
         {
-            formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
+            size_t pos = formatted_operands.find("n16");
+            formatted_operands.replace(pos, 3, std::format("${:04X}", bytes[1] | (bytes[2] << 8)));
         }
         else if (length == 3 && formatted_operands.find("a16") != std::string::npos)
         {
-            formatted_operands = std::format("${:04X}", bytes[1] | (bytes[2] << 8));
+            size_t pos = formatted_operands.find("a16");
+            formatted_operands.replace(pos, 3, std::format("${:04X}", bytes[1] | (bytes[2] << 8)));
         }
 
         // Build instruction with formatted operands

@@ -65,7 +65,7 @@ namespace cpu
         int jp_a16(uint16_t addr, bool condition = true);
         int xor_a(uint8_t value, int length = 1, int cycles = 4);
         int ld_rr_n16(uint16_t& dest, uint16_t value);
-        int ld_r_n8(uint8_t& dest, uint8_t value);
+        int ld_r_n8(uint8_t& dest, uint8_t value, int length = 2, int cycles = 8);
         int ld_hlp_a(Memory& memory, bool increment);
         int dec_r(uint8_t& reg);
         int jr_e8(int8_t offset, bool condition = true);
@@ -73,6 +73,30 @@ namespace cpu
         int ei();
         int ldh(Memory& memory, uint8_t offset, bool to_memory, int length = 1, int cycles = 8);
         int cp_a(uint8_t value, int length = 1, int cycles = 4);
+        int ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value, int length = 2, int cycles = 12);
+        int ld_a_hlp(Memory& memory, bool increment);
+        int inc_r(uint8_t& reg);
+        int call_a16(Memory& memory, uint16_t addr, bool condition = true);
+        int dec_rr(uint16_t& regpair);
+        int or_a(uint8_t value, int length = 1, int cycles = 4);
+        int ret(Memory& memory, bool condition = true, int cycles_if_taken = 16, bool enable_interrupts = false);
+        int cpl();
+        int and_a(uint8_t value, int length = 1, int cycles = 4);
+        int rst(Memory& memory, uint8_t addr);
+        int add_a(uint8_t value, int length = 1, int cycles = 4);
+        int pop_rr(Memory& memory, uint16_t& dest);
+        int add_hl_rr(uint16_t value);
+        int inc_rr(uint16_t& regpair);
+        int push_rr(Memory& memory, uint16_t value);
+        int jp_hl();
+        int inc_mem_hl(Memory& memory);
+
+        //CB-prefixed instructions
+        int cb_execute_instruction(Memory& memory);
+        int swap_r(uint8_t& reg);
+        int swap_mem_hl(Memory& memory);
+        int res(uint8_t bit, uint8_t& reg);
+        int res_mem_hl(Memory& memory, uint8_t bit);
         
         // Execute one instruction, return cycles taken
         int execute_instruction(Memory& memory);
