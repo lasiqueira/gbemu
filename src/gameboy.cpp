@@ -33,7 +33,7 @@ int GameBoy::step() {
 int GameBoy::step_frame() {
     int cycles_executed = 0;
     while (cycles_executed < CYCLES_PER_FRAME) {
-        // Handle delayed IME enable (must be done before interrupt check)
+        // Apply scheduled IME enable (from previous EI) before checking interrupts
         if (cpu.ime_scheduled) {
             cpu.ime = true;
             cpu.ime_scheduled = false;
