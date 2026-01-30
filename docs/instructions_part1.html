@@ -413,19 +413,27 @@ RETI        ; Return from interrupt handler
 }</code></pre>
 
             <h3>Applying the Delayed Enable</h3>
-            <p>At the start of each instruction execution, we check if IME should be enabled:</p>
+            <p>The scheduled IME enable must be checked <strong>before handling interrupts</strong> in your main emulation loop, not inside <code>execute_instruction</code>. This is critical for correct timing:</p>
 
-            <pre><code>int CPU::execute_instruction(Memory& memory) {
-    // Apply scheduled IME enable (from previous EI)
-    if (ime_scheduled) {
-        ime = true;
-        ime_scheduled = false;
+            <pre><code>// In your main emulation loop (e.g., Gameboy::step_frame())
+void Gameboy::step_frame() {
+    while (!ppu.frame_ready) {
+        // Apply scheduled IME enable BEFORE checking for interrupts
+        if (cpu.ime_scheduled) {
+            cpu.ime = true;
+            cpu.ime_scheduled = false;
+        }
+        
+        // Now check and handle interrupts
+        handle_interrupts();
+        
+        // Execute the next instruction
+        cpu.execute_instruction(memory);
+        // ... step PPU, etc.
     }
-    
-    // ... execute current instruction
 }</code></pre>
 
-            <p>This ensures the enable takes effect at the start of the instruction <em>after</em> EI, matching real hardware behavior.</p>
+            <p>This ensures the enable takes effect at the correct point: after the instruction following EI executes, but before the interrupt handler would check IME. If you apply the enable inside <code>execute_instruction</code>, interrupts may fire too late, causing timing bugs.</p>
 
             <h3>Add to the Switch Case</h3>
             <pre><code>case 0xF3: return di(); // DI

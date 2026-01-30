@@ -369,7 +369,7 @@ namespace cpu
         switch (opcode) {
             case 0x00: return nop(); // NOP
             case 0x01: return ld_rr_n16(bc.pair, memory.read_word(pc + 1)); // LD BC, n16
-            case 0x02: return ld_mem_n8(memory, bc.pair, af.high); // LD (BC), A
+            case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
             case 0x03: return inc_rr(bc.pair); // INC BC
             case 0x04: return inc_r(bc.high); // INC B
             case 0x05: return dec_r(bc.high); // DEC B
@@ -381,7 +381,7 @@ namespace cpu
             case 0x0D: return dec_r(bc.low); // DEC C
             case 0x0E: return ld_r_n8(bc.low, memory.read(pc + 1)); // LD C, n8
             case 0x11: return ld_rr_n16(de.pair, memory.read_word(pc + 1)); // LD DE, n16
-            case 0x12 : return ld_mem_n8(memory, de.pair, af.high); // LD (DE), A
+            case 0x12: return ld_mem_n8(memory, de.pair, af.high, 1, 8); // LD (DE), A
             case 0x13: return inc_rr(de.pair); // INC DE
             case 0x14: return inc_r(de.high); // INC D
             case 0x15: return dec_r(de.high); // DEC D
