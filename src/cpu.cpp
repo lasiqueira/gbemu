@@ -6,8 +6,16 @@
 namespace cpu
 {
     CPU::CPU() {
-        pc = 0x100; // Game Boy starts execution at 0x100
+        // Initialize registers to post-boot state (skipping boot ROM)
+        pc = 0x0100; // Game starts at 0x0100
         sp = 0xFFFE;
+        
+        // Post-boot register values
+        af.pair = 0x01B0; // A=0x01, F=0xB0 (Z=1, N=0, H=1, C=1)
+        bc.pair = 0x0013; // B=0x00, C=0x13
+        de.pair = 0x00D8; // D=0x00, E=0xD8
+        hl.pair = 0x014D; // H=0x01, L=0x4D
+        
         ime = false;
         ime_scheduled = false;
 #ifdef GBEMU_DEBUG
@@ -222,6 +230,34 @@ namespace cpu
         return 4; // CPL takes 4 cycles
     }
 
+    int CPU::daa() {
+        // Decimal Adjust Accumulator for BCD arithmetic
+        uint8_t a = af.high;
+        uint8_t correction = 0;
+        
+        if (get_flag(af.low, FLAG_HALF_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && (a & 0x0F) > 9)) {
+            correction |= 0x06;
+        }
+        
+        if (get_flag(af.low, FLAG_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && a > 0x99)) {
+            correction |= 0x60;
+            set_flag(af.low, FLAG_CARRY, true);
+        }
+        
+        if (get_flag(af.low, FLAG_SUBTRACT)) {
+            a -= correction;
+        } else {
+            a += correction;
+        }
+        
+        af.high = a;
+        set_flag(af.low, FLAG_ZERO, a == 0);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        
+        pc += 1;
+        return 4; // DAA takes 4 cycles
+    }
+
     int CPU::and_a(uint8_t value, int length, int cycles) {
         af.high &= value;
 
@@ -338,6 +374,23 @@ namespace cpu
         return 16; // RES b, (HL) takes 16 cycles
     }
 
+    int CPU::bit_r(uint8_t& reg, uint8_t bit) {
+        set_flag(af.low, FLAG_ZERO, !(reg & (1 << bit)));
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, true);
+        pc += 2; // Move past the instruction
+        return 8; // BIT b, r takes 8 cycles
+    }
+
+    int CPU::bit_mem_hl(Memory& memory, uint8_t bit) {
+        uint8_t value = memory.read(hl.pair);
+        set_flag(af.low, FLAG_ZERO, !(value & (1 << bit)));
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, true);
+        pc += 2; // Move past the instruction
+        return 12; // BIT b, (HL) takes 12 cycles
+    }
+
     int CPU::inc_mem_hl(Memory& memory) {
         uint8_t value = memory.read(hl.pair);
         value++;
@@ -352,16 +405,57 @@ namespace cpu
         return 12; // INC (HL) takes 12 cycles
     }
 
+    int CPU::dec_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        uint8_t result = value - 1;
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, result == 0);
+        set_flag(af.low, FLAG_SUBTRACT, true);
+        set_flag(af.low, FLAG_HALF_CARRY, (result & 0x0F) == 0x0F);
+
+        memory.write(hl.pair, result);
+        pc += 1; // Move past the instruction
+        return 12; // DEC (HL) takes 12 cycles
+    }
+
+    int CPU::sla_r(uint8_t& reg) {
+        bool msb = (reg & 0x80) != 0;
+        reg <<= 1;
+        reg &= 0xFE; // LSB is always 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 2; // Move past the instruction
+        return 8; // SLA r takes 8 cycles
+    }
+
+    int CPU::sla_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool msb = (value & 0x80) != 0;
+        value <<= 1;
+        value &= 0xFE; // LSB is always 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // SLA (HL) takes 16 cycles
+    }
+
     // Execute one instruction, return cycles taken
     int CPU::execute_instruction(Memory& memory) {
-        // Handle delayed IME enable
-        if (ime_scheduled) {
-            ime = true;
-            ime_scheduled = false;
-        }
 #ifdef GBEMU_DEBUG
-        // Print instruction before executing and increment counter (debug only)
-        disassembler::print_instruction_at(memory.rom, pc, false);
+        // Increment counter (debug only)
+        // Console printing disabled for performance
         instructions_executed++;
 #endif
 
@@ -369,7 +463,7 @@ namespace cpu
         switch (opcode) {
             case 0x00: return nop(); // NOP
             case 0x01: return ld_rr_n16(bc.pair, memory.read_word(pc + 1)); // LD BC, n16
-            case 0x02: return ld_mem_n8(memory, bc.pair, af.high); // LD (BC), A
+            case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
             case 0x03: return inc_rr(bc.pair); // INC BC
             case 0x04: return inc_r(bc.high); // INC B
             case 0x05: return dec_r(bc.high); // DEC B
@@ -380,8 +474,9 @@ namespace cpu
             case 0x0C: return inc_r(bc.low); // INC C
             case 0x0D: return dec_r(bc.low); // DEC C
             case 0x0E: return ld_r_n8(bc.low, memory.read(pc + 1)); // LD C, n8
+            case 0x10: pc += 2; return 4; // STOP (halt CPU and LCD until button press)
             case 0x11: return ld_rr_n16(de.pair, memory.read_word(pc + 1)); // LD DE, n16
-            case 0x12 : return ld_mem_n8(memory, de.pair, af.high); // LD (DE), A
+            case 0x12: return ld_mem_n8(memory, de.pair, af.high, 1, 8); // LD (DE), A
             case 0x13: return inc_rr(de.pair); // INC DE
             case 0x14: return inc_r(de.high); // INC D
             case 0x15: return dec_r(de.high); // DEC D
@@ -400,6 +495,7 @@ namespace cpu
             case 0x24: return inc_r(hl.high); // INC H
             case 0x25: return dec_r(hl.high); // DEC H
             case 0x26: return ld_r_n8(hl.high, memory.read(pc + 1)); // LD H, n8
+            case 0x27: return daa(); // DAA
             case 0x28: return jr_e8(static_cast<int8_t>(memory.read(pc + 1)), get_flag(af.low, FLAG_ZERO)); // JR Z, e8
             case 0x29: return add_hl_rr(hl.pair); // ADD HL, HL
             case 0x2A: return ld_a_hlp(memory, true); // LD A, (HL+)
@@ -413,6 +509,7 @@ namespace cpu
             case 0x32: return ld_hlp_a(memory, false); // LD (HL-), A
             case 0x33: return inc_rr(sp); // INC SP
             case 0x34: return inc_mem_hl(memory); // INC (HL)
+            case 0x35: return dec_mem_hl(memory); // DEC (HL)
             case 0x36: return ld_mem_n8(memory, hl.pair, memory.read(pc + 1)); // LD (HL), n8
             case 0x38: return jr_e8(static_cast<int8_t>(memory.read(pc + 1)), get_flag(af.low, FLAG_CARRY)); // JR C, e8
             case 0x39: return add_hl_rr(sp); // ADD HL, SP
@@ -582,10 +679,24 @@ namespace cpu
         uint8_t reg_index = opcode & 0x07;  // Extract register bits
         uint8_t* regs[] = {&bc.high, &bc.low, &de.high, &de.low, 
                             &hl.high, &hl.low, nullptr, &af.high};
+        
+        // SLA (0x20-0x27)
+        if (opcode >= 0x20 && opcode <= 0x27) {
+            if (reg_index == 6) return sla_mem_hl(memory);
+            return sla_r(*regs[reg_index]);
+        }
+
         // SWAP (0x30-0x37)
         if (opcode >= 0x30 && opcode <= 0x37) {
             if (reg_index == 6) return swap_mem_hl(memory);
             return swap_r(*regs[reg_index]);
+        }
+
+        // BIT b, r and BIT b, (HL) (0x40-0x7F)
+        if (opcode >= 0x40 && opcode <= 0x7F) {
+            uint8_t bit = (opcode - 0x40) / 8;
+            if (reg_index == 6) return bit_mem_hl(memory, bit);
+            return bit_r(*regs[reg_index], bit);
         }
 
         // RES b, r and RES b, (HL) (0x80-0xBF)

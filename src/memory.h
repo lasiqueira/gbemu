@@ -15,6 +15,9 @@ struct Memory {
     uint8_t hram[0x7F];        // $FF80-$FFFE: High RAM
     uint8_t ie_register;       // $FFFF: Interrupt Enable
     
+    // Joypad state
+    uint8_t joypad_state;      // Current button states (0 = pressed, 1 = released)
+    
     Memory();
     
     // Load ROM from file data

@@ -81,6 +81,7 @@ namespace cpu
         int or_a(uint8_t value, int length = 1, int cycles = 4);
         int ret(Memory& memory, bool condition = true, int cycles_if_taken = 16, bool enable_interrupts = false);
         int cpl();
+        int daa();
         int and_a(uint8_t value, int length = 1, int cycles = 4);
         int rst(Memory& memory, uint8_t addr);
         int add_a(uint8_t value, int length = 1, int cycles = 4);
@@ -90,13 +91,18 @@ namespace cpu
         int push_rr(Memory& memory, uint16_t value);
         int jp_hl();
         int inc_mem_hl(Memory& memory);
+        int dec_mem_hl(Memory& memory);
 
         //CB-prefixed instructions
         int cb_execute_instruction(Memory& memory);
         int swap_r(uint8_t& reg);
         int swap_mem_hl(Memory& memory);
+        int bit_r(uint8_t& reg, uint8_t bit);
+        int bit_mem_hl(Memory& memory, uint8_t bit);
         int res(uint8_t bit, uint8_t& reg);
         int res_mem_hl(Memory& memory, uint8_t bit);
+        int sla_r(uint8_t& reg);
+        int sla_mem_hl(Memory& memory);
         
         // Execute one instruction, return cycles taken
         int execute_instruction(Memory& memory);
