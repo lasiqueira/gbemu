@@ -462,11 +462,13 @@ case 0x77: return ld_mem_n8(memory, hl.pair, af.high); // LD (HL), A</code></pre
             <p>Note that opcode 0x76 (<code>LD (HL), (HL)</code>) doesn't exist - it's actually the HALT instruction!</p>
 
             <h3>LD (rr), A - Store Accumulator to Register Pair Address</h3>
-            <p>Similar to <code>LD (HL), A</code>, we can store the accumulator to addresses in BC and DE:</p>
+            <p>Similar to <code>LD (HL), A</code>, we can store the accumulator to addresses in BC and DE. These are 1-byte instructions taking 8 cycles:</p>
 
             <pre><code>// In execute_instruction switch:
-case 0x02: return ld_mem_n8(memory, bc.pair, af.high); // LD (BC), A
-case 0x12: return ld_mem_n8(memory, de.pair, af.high); // LD (DE), A</code></pre>
+case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
+case 0x12: return ld_mem_n8(memory, de.pair, af.high, 1, 8); // LD (DE), A</code></pre>
+
+            <p>Note: Unlike <code>LD (HL), n8</code> which is 2 bytes (opcode + immediate), these instructions are only 1 byte since the value comes from register A, not an immediate operand. You must pass <code>1, 8</code> as parameters to override the default <code>2, 12</code> from <code>ld_mem_n8</code>.</p>
 
             <h3>LD (a16), A - Store Accumulator to Immediate Address</h3>
             <p>For opcode 0xEA, we store A to a 16-bit immediate address:</p>
