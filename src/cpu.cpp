@@ -354,11 +354,6 @@ namespace cpu
 
     // Execute one instruction, return cycles taken
     int CPU::execute_instruction(Memory& memory) {
-        // Handle delayed IME enable
-        if (ime_scheduled) {
-            ime = true;
-            ime_scheduled = false;
-        }
 #ifdef GBEMU_DEBUG
         // Print instruction before executing and increment counter (debug only)
         disassembler::print_instruction_at(memory.rom, pc, false);
