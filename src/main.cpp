@@ -53,6 +53,47 @@ void handle_input(SDL_Event& event, GameBoy& gameboy)
     }
 }
 
+void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
+{
+    if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.type != SDL_EVENT_GAMEPAD_BUTTON_UP)
+        return;
+    
+    bool pressed = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+    uint8_t& joypad = gameboy.memory.joypad_state;
+    
+    // Map gamepad buttons to Game Boy buttons
+    // Joypad state: bit 0 = pressed (active low)
+    // Bits 0-3: A, B, Select, Start
+    // Bits 4-7: Right, Left, Up, Down
+    switch (event.gbutton.button)
+    {
+        case SDL_GAMEPAD_BUTTON_SOUTH:  // A button (Xbox: A, PS: X, Switch: B)
+            if (pressed) joypad &= ~0x01; else joypad |= 0x01;
+            break;
+        case SDL_GAMEPAD_BUTTON_EAST:   // B button (Xbox: B, PS: Circle, Switch: A)
+            if (pressed) joypad &= ~0x02; else joypad |= 0x02;
+            break;
+        case SDL_GAMEPAD_BUTTON_BACK:   // Select (Xbox: Back/View, PS: Share, Switch: Minus)
+            if (pressed) joypad &= ~0x04; else joypad |= 0x04;
+            break;
+        case SDL_GAMEPAD_BUTTON_START:  // Start (Xbox: Start/Menu, PS: Options, Switch: Plus)
+            if (pressed) joypad &= ~0x08; else joypad |= 0x08;
+            break;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+            if (pressed) joypad &= ~0x10; else joypad |= 0x10;
+            break;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+            if (pressed) joypad &= ~0x20; else joypad |= 0x20;
+            break;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:
+            if (pressed) joypad &= ~0x40; else joypad |= 0x40;
+            break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+            if (pressed) joypad &= ~0x80; else joypad |= 0x80;
+            break;
+    }
+}
+
 int main(int argc, char** argv)
 {
     std::println("Game Boy Emulator");
@@ -121,12 +162,26 @@ int main(int argc, char** argv)
     std::println("Starting emulation...");
     std::println("");
     
-    // Initialize SDL
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    // Initialize SDL with video and gamepad support
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
-        std::println(std::cerr, "Failed to initialize SDL: {}", SDL_GetError());
+        std::println(std::cerr, "SDL_Init failed: {}", SDL_GetError());
         return 1;
     }
+    
+    // Open the first available gamepad
+    SDL_Gamepad* gamepad = nullptr;
+    int num_joysticks = 0;
+    SDL_JoystickID* joysticks = SDL_GetGamepads(&num_joysticks);
+    if (num_joysticks > 0)
+    {
+        gamepad = SDL_OpenGamepad(joysticks[0]);
+        if (gamepad)
+        {
+            std::println("Gamepad connected: {}", SDL_GetGamepadName(gamepad));
+        }
+    }
+    SDL_free(joysticks);
     
     // Create window with space for debug panels
     const int scale = 4; // 4x scaling for 160x144 screen
@@ -221,6 +276,33 @@ int main(int argc, char** argv)
             if (event.type == SDL_EVENT_QUIT)
             {
                 quit = true;
+            }
+            else if (event.type == SDL_EVENT_GAMEPAD_ADDED)
+            {
+                // Open the newly connected gamepad if we don't have one
+                if (!gamepad)
+                {
+                    gamepad = SDL_OpenGamepad(event.gdevice.which);
+                    if (gamepad)
+                    {
+                        std::println("Gamepad connected: {}", SDL_GetGamepadName(gamepad));
+                    }
+                }
+            }
+            else if (event.type == SDL_EVENT_GAMEPAD_REMOVED)
+            {
+                // Close the disconnected gamepad
+                if (gamepad && SDL_GetGamepadID(gamepad) == event.gdevice.which)
+                {
+                    std::println("Gamepad disconnected");
+                    SDL_CloseGamepad(gamepad);
+                    gamepad = nullptr;
+                }
+            }
+            else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || 
+                     event.type == SDL_EVENT_GAMEPAD_BUTTON_UP)
+            {
+                handle_gamepad_input(event, gameboy);
             }
             else
             {
@@ -354,6 +436,12 @@ int main(int argc, char** argv)
     SDL_DestroyTexture(screen_texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    
+    if (gamepad)
+    {
+        SDL_CloseGamepad(gamepad);
+    }
+    
     SDL_Quit();
     
     return 0;
