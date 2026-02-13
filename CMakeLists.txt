@@ -35,6 +35,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Add third-party dependencies
+add_subdirectory(vendor)
+
 # Enable testing
 enable_testing()
 
@@ -44,8 +47,10 @@ add_library(gbemu_core
     src/memory.cpp
     src/gameboy.cpp
     src/disassembler.cpp
+    src/ppu.cpp
 )
 target_include_directories(gbemu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(gbemu_core PUBLIC SDL3::SDL3 imgui)
 
 # Main executable
 add_executable(gbemu src/main.cpp)

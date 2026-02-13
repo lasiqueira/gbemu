@@ -75,11 +75,50 @@
 
             <h3>Development Timeline</h3>
             <ul>
-                <li><strong>Phase 1:</strong> Disassembler - Understanding the instruction set</li>
-                <li><strong>Phase 2:</strong> CPU - Implementing the Sharp LR35902 processor</li>
-                <li><strong>Phase 3:</strong> Memory & Cartridges - Memory mapping and ROM loading</li>
-                <li><strong>Phase 4:</strong> Graphics - PPU and rendering</li>
-                <li><strong>Phase 5:</strong> Input & Audio - Joypad and sound processing</li>
+                <li><strong>Phase 1:</strong> Disassembler - Understanding the instruction set ✓</li>
+                <li><strong>Phase 2:</strong> CPU Core - Implementing the Sharp LR35902 processor ✓</li>
+                <li><strong>Phase 3:</strong> Memory System - Memory mapping and ROM loading ✓</li>
+                <li><strong>Phase 4:</strong> Instruction Set - 8-bit and 16-bit operations (mostly done) ✓</li>
+                <li><strong>Phase 5:</strong> PPU Rendering - Background, window, and sprite layers ✓</li>
+                <li><strong>Phase 6:</strong> Input System - Keyboard and gamepad support ✓</li>
+                <li><strong>Phase 7:</strong> Complete CPU - Remaining instructions (In progress)</li>
+                <li><strong>Phase 8:</strong> Audio (APU) - Sound channels and audio output (Planned)</li>
+                <li><strong>Phase 9:</strong> Timers - Timer registers and interrupts (Planned)</li>
+                <li><strong>Phase 10:</strong> MBCs - Memory bank controllers for larger ROMs (Planned)</li>
+                <li><strong>Phase 11:</strong> Serial - Link cable communication (Planned)</li>
+            </ul>
+            
+            <h3>Current Status</h3>
+            <p>
+                The emulator currently features a CPU with many core instructions implemented, 
+                complete PPU with all three rendering layers (background, window, sprites), and dual input 
+                support (keyboard + gamepad). It successfully runs games like Tetris for over 6 million cycles 
+                before hitting unimplemented instructions.
+            </p>
+            
+            <h4>What's Working</h4>
+            <ul>
+                <li>✓ Disassembler with full CB-prefixed instruction support</li>
+                <li>✓ CPU execution core with cycle-accurate timing</li>
+                <li>✓ Memory mapping with I/O registers</li>
+                <li>✓ Many Sharp LR35902 instructions (load, arithmetic, logic, jumps, etc.)</li>
+                <li>✓ PPU with background scrolling (SCX/SCY)</li>
+                <li>✓ Window layer with proper line counter</li>
+                <li>✓ Sprite rendering (8x8 and 8x16 modes, flipping, transparency, priority)</li>
+                <li>✓ OAM scanning with 10-sprite-per-scanline limit</li>
+                <li>✓ V-Blank and LCD STAT interrupts</li>
+                <li>✓ Joypad input via keyboard (Z/X/Arrows/Shift/Enter)</li>
+                <li>✓ Gamepad support (Xbox, PlayStation, Nintendo Pro controllers)</li>
+                <li>✓ Hot-plugging for controllers</li>
+            </ul>
+            
+            <h4>In Progress / Planned</h4>
+            <ul>
+                <li>⏳ Remaining CPU instructions (SUB immediate, some arithmetic variants)</li>
+                <li>⏳ Audio Processing Unit (APU) - 4 sound channels</li>
+                <li>⏳ Memory Bank Controllers (MBC1, MBC3, MBC5)</li>
+                <li>⏳ Serial communication for link cable</li>
+                <li>⏳ Save state support</li>
             </ul>
 
             <h3>Table of Contents</h3>
@@ -109,13 +148,36 @@
                     <a href="instructions_part2.html" class="toc-link">Instructions - Part 2</a>
                     <span class="toc-status complete">Complete</span>
                 </div>
-                <!-- Add more sections as you create them:
                 <div class="toc-item">
                     <span class="toc-number">6.</span>
-                    <a href="joypad_input.html" class="toc-link">Joypad Input</a>
-                    <span class="toc-status upcoming">Coming Soon</span>
+                    <a href="input_and_rendering.html" class="toc-link">Input & Rendering</a>
+                    <span class="toc-status complete">Complete</span>
                 </div>
-                -->
+                <div class="toc-item">
+                    <span class="toc-number">7.</span>
+                    <span class="toc-link" style="color: #888;">Completing CPU Instructions</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">8.</span>
+                    <span class="toc-link" style="color: #888;">Audio Processing Unit (APU)</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">9.</span>
+                    <span class="toc-link" style="color: #888;">Timer System</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">10.</span>
+                    <span class="toc-link" style="color: #888;">Memory Bank Controllers (MBCs)</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">11.</span>
+                    <span class="toc-link" style="color: #888;">Serial Communication</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
             </div>
 
             <h3>Getting Started</h3>

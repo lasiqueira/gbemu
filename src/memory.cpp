@@ -1,6 +1,7 @@
 #include "memory.h"
+#include <print>
 
-Memory::Memory() : ie_register(0) {
+Memory::Memory() : ie_register(0), joypad_state(0xFF) {
     std::memset(vram, 0, sizeof(vram));
     std::memset(wram, 0, sizeof(wram));
     std::memset(oam, 0, sizeof(oam));
@@ -53,6 +54,29 @@ uint8_t Memory::read(uint16_t addr) const {
     
     // I/O Registers: $FF00-$FF7F
     if (addr < 0xFF80) {
+        // Joypad register (0xFF00)
+        if (addr == 0xFF00) {
+            uint8_t joyp = io[0];
+            uint8_t result = 0xC0; // Bits 6-7 always set
+            
+            // Bit 4: Select direction keys (0 = selected)
+            // Bit 5: Select button keys (0 = selected)
+            if (!(joyp & 0x10)) { // Direction keys selected
+                result |= 0x10;
+                result |= (joypad_state >> 4) & 0x0F; // Bits 0-3: Right, Left, Up, Down
+            }
+            else if (!(joyp & 0x20)) { // Button keys selected
+                result |= 0x20;
+                result |= joypad_state & 0x0F; // Bits 0-3: A, B, Select, Start
+            }
+            else {
+                result |= 0x30; // Both unselected
+                result |= 0x0F; // All buttons released
+            }
+            
+            return result;
+        }
+        
         return io[addr - 0xFF00];
     }
     
@@ -109,7 +133,22 @@ void Memory::write(uint16_t addr, uint8_t value) {
     
     // I/O Registers: $FF00-$FF7F
     if (addr < 0xFF80) {
-        io[addr - 0xFF00] = value;
+        // Joypad register (0xFF00) - only bits 4-5 are writable
+        if (addr == 0xFF00) {
+            io[0] = (value & 0x30) | 0xC0; // Keep only bits 4-5, set bits 6-7
+        }
+        // DMA transfer (0xFF46) - OAM DMA
+        else if (addr == 0xFF46) {
+            // DMA copies 160 bytes from XX00-XX9F to FE00-FE9F
+            uint16_t source = value * 0x100;
+            for (int i = 0; i < 0xA0; i++) {
+                oam[i] = read(source + i);
+            }
+            io[0x46] = value;
+        }
+        else {
+            io[addr - 0xFF00] = value;
+        }
         return;
     }
     

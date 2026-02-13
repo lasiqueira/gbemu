@@ -3,6 +3,7 @@
 #include <vector>
 #include "cpu.h"
 #include "memory.h"
+#include "ppu.h"
 
 // Game Boy timing constants
 constexpr int CPU_FREQUENCY = 4194304;        // 4.194304 MHz (cycles per second)
@@ -36,11 +37,8 @@ constexpr uint16_t INT_VECTOR_JOYPAD = 0x0060;
 struct GameBoy {
     Memory memory;
     cpu::CPU cpu;
+    PPU ppu;
     bool running;
-
-    // LCD state
-    int lcd_cycles; // Cycles since last LCD state change
-    uint8_t ly;        // Current scanline (LY register)
     
     GameBoy();
     
@@ -51,12 +49,7 @@ struct GameBoy {
     
     // Execute one frame worth of cycles
     int step_frame();
-
-    void update_lcd(int cycles);
     
     // Handle interrupts
     void handle_interrupts();
-    
-    // Main emulation loop
-    void run();
 };

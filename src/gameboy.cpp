@@ -1,9 +1,25 @@
 #include "gameboy.h"
 #include <print>
 
-GameBoy::GameBoy() : running(false), lcd_cycles(0), ly(0) {
-    memory.write(IO_LY, ly); // Initialize LY register
+GameBoy::GameBoy() : running(false) {
+    memory.write(IO_LY, 0); // Initialize LY register
     memory.write(IO_IF, 0); // Initialize IF register (no interrupts pending)
+    
+    // Initialize joypad register (0xFF00) - bits 4-5 set (no keys selected), bits 0-3 set (no buttons pressed)
+    memory.write(0xFF00, 0x3F);
+    
+    // Initialize LCD registers to post-boot state (skipping boot ROM)
+    memory.write(0xFF40, 0x91); // LCDC: LCD on, BG on, BG tile data at 8800-97FF
+    memory.write(0xFF41, 0x00); // STAT: Mode 0
+    memory.write(0xFF42, 0x00); // SCY: Scroll Y = 0
+    memory.write(0xFF43, 0x00); // SCX: Scroll X = 0
+    memory.write(0xFF44, 0x00); // LY: Line = 0
+    memory.write(0xFF45, 0x00); // LYC: LY Compare = 0
+    memory.write(0xFF47, 0xFC); // BGP: Background palette (11 11 10 00)
+    memory.write(0xFF48, 0xFF); // OBP0: Object palette 0
+    memory.write(0xFF49, 0xFF); // OBP1: Object palette 1
+    memory.write(0xFF4A, 0x00); // WY: Window Y = 0
+    memory.write(0xFF4B, 0x00); // WX: Window X = 0
 }
 
 void GameBoy::load_rom(const std::vector<uint8_t>& rom) {
@@ -33,29 +49,10 @@ int GameBoy::step_frame() {
         }
         cycles_executed += cycles;
         
-        // TODO: Update other components (PPU, timers, APU) with cycles
-        update_lcd(cycles);
+        // Update PPU
+        ppu.step(cycles, memory);
     }
     return cycles_executed;
-}
-
-void GameBoy::update_lcd(int cycles) {
-    lcd_cycles += cycles;
-    while (lcd_cycles >= CYCLES_PER_SCANLINE) {
-        lcd_cycles -= CYCLES_PER_SCANLINE;
-        ly++;
-        if (ly >= SCANLINES_PER_FRAME) {
-            ly = 0; // Reset to first scanline
-        }
-        
-        // Trigger VBlank interrupt when entering VBlank period
-        if (ly == VBLANK_SCANLINE) {
-            uint8_t if_reg = memory.read(IO_IF);
-            memory.write(IO_IF, if_reg | INT_VBLANK); // Set VBlank interrupt flag
-        }
-        
-        memory.write(IO_LY, ly); // Update LY register in memory
-    }
 }
 
 void GameBoy::handle_interrupts() {
@@ -106,19 +103,4 @@ void GameBoy::handle_interrupts() {
     cpu.pc = interrupt_vector;
 }
 
-void GameBoy::run() {
-    running = true;
-    int frames_executed = 0;
-    
-    while (running) {
-        int cycles = step_frame();
-        if (cycles < 0) {
-            return; // Exit on error
-        }
-        frames_executed++;
-    
-        // TODO: Render frame, handle input, etc.
-    }
-    
-    std::println("\nEmulation stopped after {} frames", frames_executed);
-}
+
