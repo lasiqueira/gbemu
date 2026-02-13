@@ -67,6 +67,7 @@ struct PPU
     PPUMode mode;
     int mode_cycles;      // Cycles spent in current mode
     int scanline;         // Current scanline (0-153)
+    int window_line_counter; //Track which window line to draw
     
     bool frame_ready;     // True when a frame is complete and ready to display
     
@@ -86,4 +87,6 @@ struct PPU
     
     // Request interrupt
     void request_interrupt(Memory& memory, uint8_t interrupt_bit);
+
+    uint8_t get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory);
 };
