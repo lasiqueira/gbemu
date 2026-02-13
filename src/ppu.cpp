@@ -16,8 +16,10 @@ constexpr uint16_t OBP0 = 0xFF48; // Object Palette 0 Data
 constexpr uint16_t OBP1 = 0xFF49; // Object Palette 1 Data
 constexpr uint16_t WY = 0xFF4A;   // Window Y Position
 constexpr uint16_t WX = 0xFF4B;   // Window X Position
+constexpr uint16_t OAM_BASE = 0xFE00; // Base address of OAM (Object Attribute Memory)
 
-PPU::PPU() : mode(PPUMode::OAMSearch), mode_cycles(0), scanline(0), window_line_counter(0), frame_ready(false)
+
+PPU::PPU() : mode(PPUMode::OAMSearch), mode_cycles(0), scanline(0), window_line_counter(0), visible_sprite_count(0), frame_ready(false)
 {
     framebuffer.fill(0);
     rgba_buffer.fill(0);
@@ -51,6 +53,7 @@ void PPU::step(int cycles, Memory& memory)
             if (mode_cycles >= MODE_2_CYCLES)
             {
                 mode_cycles -= MODE_2_CYCLES;
+                scan_oam(memory);
                 set_mode(PPUMode::Drawing, memory);
             }
             break;
@@ -179,7 +182,7 @@ void PPU::render_scanline(Memory& memory)
     // Render
     for (int x = 0; x < SCREEN_WIDTH; x++)
     {
-        uint8_t palette_color;
+        uint8_t bg_color;
         
         bool draw_window = window_visible_this_line && (x >= (wx - 7));
         if(draw_window)
@@ -187,7 +190,7 @@ void PPU::render_scanline(Memory& memory)
             uint8_t pixel_x = x - (wx - 7);
             uint8_t pixel_y = window_line_counter;
 
-            palette_color = get_tile_pixel(
+            bg_color = get_tile_pixel(
                 pixel_x,
                 pixel_y,
                 window_tile_map, 
@@ -205,7 +208,7 @@ void PPU::render_scanline(Memory& memory)
             uint8_t pixel_y = (scanline + scy) & 0xFF;
             uint8_t pixel_x = (x + scx) & 0xFF;
             
-            palette_color = get_tile_pixel(
+            bg_color = get_tile_pixel(
                 pixel_x,
                 pixel_y,
                 bg_tile_map, 
@@ -214,9 +217,47 @@ void PPU::render_scanline(Memory& memory)
                 bgp,
                 memory
             );
-           
         }
-         framebuffer[scanline * SCREEN_WIDTH + x] = palette_color;
+
+        int sprite_color = -1;
+        uint8_t sprite_priority = 0; // Stores sprite attributes for priority check
+        
+        for(int i = 0; i < visible_sprite_count; i++)
+        {
+            int color = get_sprite_pixel(visible_sprites[i], x, memory);
+            if(color != -1) // Non-transparent sprite pixel
+            {
+                sprite_color = color;
+                sprite_priority = visible_sprites[i].attributes;
+                break; // First non-transparent sprite pixel has priority
+            }
+        }
+        uint8_t final_color;
+        if(sprite_color == -1)
+        {
+            final_color = bg_color;
+        }
+        else if(sprite_priority & SPRITE_PRIORITY)
+        {
+            // Sprite behind BG, but BG color 0 is transparent
+            if(bg_color == 0)
+            {
+                // BG color 0 is transparent, so sprite is visible
+                final_color = sprite_color;
+            }
+            else
+            {
+                // BG color 1-3 are opaque, so sprite is behind BG
+                final_color = bg_color;
+            }
+        }
+        else 
+        {
+            // Sprite above BG
+            final_color = sprite_color; 
+        }      
+
+        framebuffer[scanline * SCREEN_WIDTH + x] = final_color;
     }
 
     if(window_rendered_this_line)
@@ -313,4 +354,119 @@ uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_
     
     // Apply palette
     return (palette >> (color_id * 2)) & 0x03;
+}
+
+void PPU::scan_oam(Memory& memory)
+{
+    visible_sprite_count = 0;
+
+    uint8_t lcdc = memory.read(LCDC);
+
+    // If sprites are disabled, skip scanning OAM
+    if(!(lcdc & LCDC_OBJ_ENABLE))
+    {
+        return; // Sprites are disabled
+    }
+
+    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
+
+    for(int i = 0; i < OAM_SPRITE_COUNT; i++)
+    {
+        // Each sprite takes 4 bytes in OAM
+        uint16_t sprite_addr = OAM_BASE + (i * 4);
+
+        // Read sprite attributes from OAM
+        uint8_t y = memory.read(sprite_addr);
+        uint8_t x = memory.read(sprite_addr + 1);
+        uint8_t tile = memory.read(sprite_addr + 2);
+        uint8_t attributes = memory.read(sprite_addr + 3);
+
+        if(y == 0 || y >= 160) continue; // Sprite is off-screen vertically
+
+        int sprite_top = y - 16;
+        int sprite_bottom = sprite_top + sprite_height;
+
+        if(scanline >= sprite_top && scanline < sprite_bottom)
+        {
+            visible_sprites[visible_sprite_count++] = {y, x, tile, attributes, static_cast<uint8_t>(i)};
+
+            if(visible_sprite_count >= MAX_SPRITES_PER_LINE)
+            {
+                break; // Reached max sprites for this line
+            }
+        }
+    }
+}
+
+int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
+{
+    // Calculate horizontal bounds of the sprite
+    int sprite_left = sprite.x - 8;
+    int sprite_right = sprite_left + 8;
+
+    // Check if the pixel is within the horizontal bounds of the sprite
+    if(screen_x < sprite_left || screen_x >= sprite_right)
+    {
+        return -1; // Not within sprite horizontally
+    }
+    // Calculate vertical bounds of the sprite
+    int pixel_x = screen_x - sprite_left;
+    int pixel_y = scanline - (sprite.y - 16);
+
+    // Determine sprite height from LCDC
+    uint8_t lcdc = memory.read(LCDC);
+    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
+
+    // Handle Y flip
+    if(sprite.attributes & SPRITE_FLIP_Y)
+    {
+        pixel_y = (sprite_height - 1) - pixel_y;
+    }
+
+    // Handle X flip
+    if(sprite.attributes & SPRITE_FLIP_X)
+    {
+        pixel_x = 7 - pixel_x;
+    }
+
+    // Determine which tile to use
+    uint8_t tile_index = sprite.tile_index;
+    if(sprite_height == 16)
+    {
+        if(pixel_y >= 8)
+        {
+            // Bottom half
+            tile_index = (sprite.tile_index & 0xFE) + 1;
+            pixel_y -= 8;
+        }
+        else
+        {
+            // Top half
+            tile_index = sprite.tile_index & 0xFE;
+        }
+    }
+
+    // Get tile data address
+    uint16_t tile_addr = 0x8000 + (tile_index * 16);
+    // Each tile row is 2 bytes
+    uint16_t tile_row_addr = tile_addr + (pixel_y * 2);
+    uint8_t byte1 = memory.read(tile_row_addr);
+    uint8_t byte2 = memory.read(tile_row_addr + 1);
+
+    // Get color from pixel (bit 7 = leftmost pixel)
+    int bit_pos = 7 - pixel_x;
+    uint8_t color_id = ((byte2 >> bit_pos) & 1) << 1 | ((byte1 >> bit_pos) & 1);
+
+    // Color ID 0 is transparent for sprites
+    if(color_id == 0)
+    {
+        return -1;
+    }
+
+    // Apply palette
+    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read(OBP1) : memory.read(OBP0);
+
+    uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
+
+    return palette_color;
 }

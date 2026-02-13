@@ -34,6 +34,26 @@ constexpr uint8_t STAT_MODE0_INT = 0x08;     // Bit 3: Mode 0 H-Blank interrupt
 constexpr uint8_t STAT_LYC_FLAG = 0x04;      // Bit 2: LYC=LY flag
 constexpr uint8_t STAT_MODE_MASK = 0x03;     // Bits 0-1: Mode flag
 
+// Sprite/OAM constants
+constexpr int MAX_SPRITES_PER_LINE = 10; // Maximum sprites that can be rendered on a single scanline
+constexpr int OAM_SPRITE_COUNT = 40;     // Total sprites in OAM (Object Attribute Memory)
+
+// Sprite attribute flags
+constexpr uint8_t SPRITE_PRIORITY = 0x80; // Bit 7: Sprite-to-background priority (0=OBJ above BG, 1=OBJ behind BG color 1-3)
+constexpr uint8_t SPRITE_FLIP_Y = 0x40;   // Bit 6: Y flip
+constexpr uint8_t SPRITE_FLIP_X = 0x20;   // Bit 5: X flip
+constexpr uint8_t SPRITE_PALETTE = 0x10;   // Bit 4: Palette number (0=OBP0, 1=OBP1)
+
+// Sprite/Object data for rendering
+struct Sprite
+{
+    uint8_t y;       // Y position on screen (minus 16)
+    uint8_t x;       // X position on screen (minus 8)
+    uint8_t tile_index; // Tile index in memory
+    uint8_t attributes; // Attribute flags (priority, flip, palette)
+    uint8_t oam_index; // Original index in OAM (for priority)
+};
+
 // PPU modes
 enum class PPUMode : uint8_t
 {
@@ -63,11 +83,15 @@ struct PPU
     
     // RGBA framebuffer for rendering (4 bytes per pixel)
     std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT * 4> rgba_buffer;
+
+    std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites; // Sprites visible on the current scanline
+   
     
     PPUMode mode;
     int mode_cycles;      // Cycles spent in current mode
     int scanline;         // Current scanline (0-153)
     int window_line_counter; //Track which window line to draw
+    int visible_sprite_count; // Number of sprites visible on the current scanline
     
     bool frame_ready;     // True when a frame is complete and ready to display
     
@@ -88,5 +112,11 @@ struct PPU
     // Request interrupt
     void request_interrupt(Memory& memory, uint8_t interrupt_bit);
 
+    // Get the color index of a pixel from a tile, given its coordinates and tile data
     uint8_t get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory);
+
+    // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
+    void scan_oam(Memory& memory);
+
+    int get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory);
 };
