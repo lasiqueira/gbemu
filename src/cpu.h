@@ -92,7 +92,17 @@ namespace cpu
         int jp_hl();
         int inc_mem_hl(Memory& memory);
         int dec_mem_hl(Memory& memory);
-
+        int rlca();
+        int rrca();
+        int rla();
+        int rra();
+        int scf();
+        int ccf();
+        int halt();
+        int adc_a(uint8_t value, int length = 1, int cycles = 4);
+        int sub_a(uint8_t value, int length = 1, int cycles = 4);
+        int sbc_a(uint8_t value, int length = 1, int cycles = 4);
+        int stop();
         //CB-prefixed instructions
         int cb_execute_instruction(Memory& memory);
         int swap_r(uint8_t& reg);
@@ -103,6 +113,20 @@ namespace cpu
         int res_mem_hl(Memory& memory, uint8_t bit);
         int sla_r(uint8_t& reg);
         int sla_mem_hl(Memory& memory);
+        int rlc_r(uint8_t& reg);
+        int rlc_mem_hl(Memory& memory);
+        int rrc_r(uint8_t& reg);
+        int rrc_mem_hl(Memory& memory);
+        int rl_r(uint8_t& reg);
+        int rl_mem_hl(Memory& memory);
+        int rr_r(uint8_t& reg);
+        int rr_mem_hl(Memory& memory);
+        int sra_r(uint8_t& reg);
+        int sra_mem_hl(Memory& memory);
+        int srl_r(uint8_t& reg);
+        int srl_mem_hl(Memory& memory);
+        int set(uint8_t bit, uint8_t& reg);
+        int set_mem_hl(Memory& memory, uint8_t bit);
         
         // Execute one instruction, return cycles taken
         int execute_instruction(Memory& memory);

@@ -451,6 +451,366 @@ namespace cpu
         return 16; // SLA (HL) takes 16 cycles
     }
 
+    int CPU::rlca() {
+        bool msb = (af.high & 0x80) != 0;
+        af.high = (af.high << 1) | (msb ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, af.high == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 1; // Move past the instruction
+        return 4; // RLCA takes 4 cycles
+
+    }
+
+    int CPU::rrca() {
+        bool lsb = (af.high & 0x01) != 0;
+        af.high = (af.high >> 1) | (lsb ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, false);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 1; // Move past the instruction
+        return 4; // RRCA takes 4 cycles
+    }
+    
+    int CPU::rla() {
+        bool msb = (af.high & 0x80) != 0;
+        af.high = (af.high << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, false);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 1; // Move past the instruction
+        return 4; // RLA takes 4 cycles
+    }
+
+    int CPU::rra() {
+        bool lsb = (af.high & 0x01) != 0;
+        af.high = (af.high >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, false);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 1; // Move past the instruction
+        return 4; // RRA takes 4 cycles
+    }
+
+    int CPU::scf() {
+        set_flag(af.low, FLAG_CARRY, true);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        pc += 1; // Move past the instruction
+        return 4; // SCF takes 4 cycles
+    }
+
+    int CPU::ccf() {
+        bool carry = get_flag(af.low, FLAG_CARRY);
+        set_flag(af.low, FLAG_CARRY, !carry);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        pc += 1; // Move past the instruction
+        return 4; // CCF takes 4 cycles
+    }
+
+    int CPU::halt() {
+        //TODO implement HALT behavior (stop CPU until interrupt, with HALT bug)
+        pc += 1; // Move past the instruction
+        return 4; // HALT takes 4 cycles
+    }
+
+    int CPU::adc_a(uint8_t value, int length, int cycles) {
+        uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
+        uint16_t result = static_cast<uint16_t>(af.high) + static_cast<uint16_t>(value) + carry;
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, ((af.high & 0x0F) + (value & 0x0F) + carry) > 0x0F);
+        set_flag(af.low, FLAG_CARRY, result > 0xFF);
+
+        af.high = static_cast<uint8_t>(result & 0xFF);
+
+        pc += length; // Move past the instruction and operands
+        return cycles; // Return the cycle count
+    }
+
+    int CPU::sub_a(uint8_t value, int length, int cycles) {
+        uint16_t result = static_cast<uint16_t>(af.high) - static_cast<uint16_t>(value);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+        set_flag(af.low, FLAG_SUBTRACT, true);
+        set_flag(af.low, FLAG_HALF_CARRY, (af.high & 0x0F) < (value & 0x0F));
+        set_flag(af.low, FLAG_CARRY, af.high < value);
+
+        af.high = static_cast<uint8_t>(result & 0xFF);
+
+        pc += length; // Move past the instruction and operands
+        return cycles; // Return the cycle count
+    }
+
+    int CPU::sbc_a(uint8_t value, int length, int cycles) {
+        uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
+        uint16_t result = static_cast<uint16_t>(af.high) - static_cast<uint16_t>(value) - carry;
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+        set_flag(af.low, FLAG_SUBTRACT, true);
+        set_flag(af.low, FLAG_HALF_CARRY, (af.high & 0x0F) < ((value & 0x0F) + carry));
+        set_flag(af.low, FLAG_CARRY, af.high < (value + carry));
+
+        af.high = static_cast<uint8_t>(result & 0xFF);
+
+        pc += length; // Move past the instruction and operands
+        return cycles; // Return the cycle count
+    }
+
+    int CPU::rlc_r(uint8_t& reg) {
+        bool msb = (reg & 0x80) != 0;
+        reg = (reg << 1) | (msb ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 2; // Move past the instruction
+        return 8; // RLC r takes 8 cycles
+    }
+
+    int CPU::rlc_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool msb = (value & 0x80) != 0;
+        value = (value << 1) | (msb ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // RLC (HL) takes 16 cycles
+    }
+
+    int CPU::rrc_r(uint8_t& reg) {
+        bool lsb = (reg & 0x01) != 0;
+        reg = (reg >> 1) | (lsb ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 2; // Move past the instruction
+        return 8; // RRC r takes 8 cycles
+    }
+    
+    int CPU::rrc_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool lsb = (value & 0x01) != 0;
+        value = (value >> 1) | (lsb ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // RRC (HL) takes 16 cycles
+    }
+
+    int CPU::rl_r(uint8_t& reg) {
+        bool msb = (reg & 0x80) != 0;
+        reg = (reg << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 2; // Move past the instruction
+        return 8; // RL r takes 8 cycles
+    }
+
+    int CPU::rl_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool msb = (value & 0x80) != 0;
+        value = (value << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // RL (HL) takes 16 cycles
+    }
+
+    int CPU::rr_r(uint8_t& reg) {
+        bool lsb = (reg & 0x01) != 0;
+        reg = (reg >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 2; // Move past the instruction
+        return 8; // RR r takes 8 cycles
+    }
+
+    int CPU::rr_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool lsb = (value & 0x01) != 0;
+        value = (value >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // RR (HL) takes 16 cycles
+    }
+
+    int CPU::sla_r(uint8_t& reg) {
+        bool msb = (reg & 0x80) != 0;
+        reg <<= 1;
+        reg &= 0xFE; // LSB is always 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        pc += 2; // Move past the instruction
+        return 8; // SLA r takes 8 cycles
+    }
+    
+    int CPU::sla_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool msb = (value & 0x80) != 0;
+        value <<= 1;
+        value &= 0xFE; // LSB is always 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, msb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // SLA (HL) takes 16 cycles
+    }
+
+    int CPU::sra_r(uint8_t& reg) {
+        bool msb = (reg & 0x80) != 0;
+        bool lsb = (reg & 0x01) != 0;
+        reg = (reg >> 1) | (msb ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 2; // Move past the instruction
+        return 8; // SRA r takes 8 cycles
+    }
+    
+    int CPU::sra_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool msb = (value & 0x80) != 0;
+        bool lsb = (value & 0x01) != 0;
+        value = (value >> 1) | (msb ? 0x80 : 0);
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // SRA (HL) takes 16 cycles
+    }
+    
+    int CPU::srl_r(uint8_t& reg) {
+        bool lsb = (reg & 0x01) != 0;
+        reg >>= 1; // MSB becomes 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, reg == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        pc += 2; // Move past the instruction
+        return 8; // SRL r takes 8 cycles
+    }
+    
+    int CPU::srl_mem_hl(Memory& memory) {
+        uint8_t value = memory.read(hl.pair);
+        bool lsb = (value & 0x01) != 0;
+        value >>= 1; // MSB becomes 0
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, value == 0);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, false);
+        set_flag(af.low, FLAG_CARRY, lsb);
+
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // SRL (HL) takes 16 cycles
+    }
+    
+    int CPU::set(uint8_t bit, uint8_t& reg) {
+        reg |= (1 << bit);
+        pc += 2; // Move past the instruction
+        return 8; // SET b, r takes 8 cycles
+    }
+
+    int CPU::set_mem_hl(Memory& memory, uint8_t bit) {
+        uint8_t value = memory.read(hl.pair);
+        value |= (1 << bit);
+        memory.write(hl.pair, value);
+        pc += 2; // Move past the instruction
+        return 16; // SET b, (HL) takes 16 cycles
+    }
+
+    int CPU::stop() {
+        //TODO implement STOP behavior (stop CPU and LCD until button press)
+        pc += 2; // Move past the instruction (STOP is 2 bytes)
+        return 4; // STOP takes 4 cycles
+    }
     // Execute one instruction, return cycles taken
     int CPU::execute_instruction(Memory& memory) {
 #ifdef GBEMU_DEBUG
@@ -466,28 +826,33 @@ namespace cpu
             case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
             case 0x03: return inc_rr(bc.pair); // INC BC
             case 0x04: return inc_r(bc.high); // INC B
-            case 0x05: return dec_r(bc.high); // DEC B
+            case 0x05: return dec_r(bc.high); // DEC B            
             case 0x06: return ld_r_n8(bc.high, memory.read(pc + 1)); // LD B, n8
+            case 0x07: return rlca(); // RLCA
+
             case 0x09: return add_hl_rr(bc.pair); // ADD HL, BC
             case 0x0A: return ld_r_n8(af.high, memory.read(bc.pair), 1, 8); // LD A, (BC)
             case 0x0B: return dec_rr(bc.pair); // DEC BC
             case 0x0C: return inc_r(bc.low); // INC C
             case 0x0D: return dec_r(bc.low); // DEC C
             case 0x0E: return ld_r_n8(bc.low, memory.read(pc + 1)); // LD C, n8
-            case 0x10: pc += 2; return 4; // STOP (halt CPU and LCD until button press)
+            case 0x0F: return rrca(); // RRCA
+            case 0x10: return stop(); // STOP
             case 0x11: return ld_rr_n16(de.pair, memory.read_word(pc + 1)); // LD DE, n16
             case 0x12: return ld_mem_n8(memory, de.pair, af.high, 1, 8); // LD (DE), A
             case 0x13: return inc_rr(de.pair); // INC DE
             case 0x14: return inc_r(de.high); // INC D
             case 0x15: return dec_r(de.high); // DEC D
             case 0x16: return ld_r_n8(de.high, memory.read(pc + 1)); // LD D, n8
+            case 0x17: return rla(); // RLA
+            case 0x18: return jr_e8(static_cast<int8_t>(memory.read(pc + 1))); // JR e8
             case 0x19: return add_hl_rr(de.pair); // ADD HL, DE
             case 0x1A: return ld_r_n8(af.high, memory.read(de.pair), 1, 8); // LD A, (DE)
-            case 0x18: return jr_e8(static_cast<int8_t>(memory.read(pc + 1))); // JR e8
             case 0x1B: return dec_rr(de.pair); // DEC DE
             case 0x1C: return inc_r(de.low); // INC E
             case 0x1D: return dec_r(de.low); // DEC E
             case 0x1E: return ld_r_n8(de.low, memory.read(pc + 1)); // LD E, n8
+            case 0x1F: return rra(); // RRA
             case 0x20: return jr_e8(static_cast<int8_t>(memory.read(pc + 1)), !get_flag(af.low, FLAG_ZERO)); // JR NZ, e8
             case 0x21: return ld_rr_n16(hl.pair, memory.read_word(pc + 1)); // LD HL, n16
             case 0x22: return ld_hlp_a(memory, true); // LD (HL+), A
@@ -511,6 +876,7 @@ namespace cpu
             case 0x34: return inc_mem_hl(memory); // INC (HL)
             case 0x35: return dec_mem_hl(memory); // DEC (HL)
             case 0x36: return ld_mem_n8(memory, hl.pair, memory.read(pc + 1)); // LD (HL), n8
+            case 0x37: return scf(); // SCF
             case 0x38: return jr_e8(static_cast<int8_t>(memory.read(pc + 1)), get_flag(af.low, FLAG_CARRY)); // JR C, e8
             case 0x39: return add_hl_rr(sp); // ADD HL, SP
             case 0x3A: return ld_a_hlp(memory, false); // LD A, (HL-)
@@ -518,6 +884,7 @@ namespace cpu
             case 0x3C: return inc_r(af.high); // INC A
             case 0x3D: return dec_r(af.high); // DEC A
             case 0x3E: return ld_r_n8(af.high, memory.read(pc + 1)); // LD A, n8  
+            case 0x3F: return ccf(); // CCF
             case 0x40: return ld_r_n8(bc.high, bc.high, 1, 4); // LD B, B
             case 0x41: return ld_r_n8(bc.high, bc.low, 1, 4);  // LD B, C
             case 0x42: return ld_r_n8(bc.high, de.high, 1, 4); // LD B, D
@@ -572,6 +939,7 @@ namespace cpu
             case 0x73: return ld_mem_n8(memory, hl.pair, de.low);  // LD (HL), E
             case 0x74: return ld_mem_n8(memory, hl.pair, hl.high); // LD (HL), H
             case 0x75: return ld_mem_n8(memory, hl.pair, hl.low);  // LD (HL), L
+            case 0x76: return halt(); // HALT
             case 0x77: return ld_mem_n8(memory, hl.pair, af.high); // LD (HL), A
             case 0x78: return ld_r_n8(af.high, bc.high, 1, 4); // LD A, B
             case 0x79: return ld_r_n8(af.high, bc.low, 1, 4);  // LD A, C
@@ -589,6 +957,30 @@ namespace cpu
             case 0x85: return add_a(hl.low);  // ADD A, L
             case 0x86: return add_a(memory.read(hl.pair), 1, 8); // ADD A, (HL)
             case 0x87: return add_a(af.high); // ADD A, A
+            case 0x88: return adc_a(bc.high); // ADC A, B
+            case 0x89: return adc_a(bc.low);  // ADC A, C
+            case 0x8A: return adc_a(de.high); // ADC A, D
+            case 0x8B: return adc_a(de.low);  // ADC A, E
+            case 0x8C: return adc_a(hl.high); // ADC A, H
+            case 0x8D: return adc_a(hl.low);  // ADC A, L
+            case 0x8E: return adc_a(memory.read(hl.pair), 1, 8); // ADC A, (HL)
+            case 0x8F: return adc_a(af.high); // ADC A, A
+            case 0x90: return sub_a(bc.high); // SUB B
+            case 0x91: return sub_a(bc.low);  // SUB C
+            case 0x92: return sub_a(de.high); // SUB D
+            case 0x93: return sub_a(de.low);  // SUB E
+            case 0x94: return sub_a(hl.high); // SUB H
+            case 0x95: return sub_a(hl.low);  // SUB L
+            case 0x96: return sub_a(memory.read(hl.pair), 1, 8); // SUB (HL)
+            case 0x97: return sub_a(af.high); // SUB A
+            case 0x98: return sbc_a(bc.high); // SBC A, B
+            case 0x99: return sbc_a(bc.low);  // SBC A, C
+            case 0x9A: return sbc_a(de.high); // SBC A, D
+            case 0x9B: return sbc_a(de.low);  // SBC A, E
+            case 0x9C: return sbc_a(hl.high); // SBC A, H
+            case 0x9D: return sbc_a(hl.low);  // SBC A, L
+            case 0x9E: return sbc_a(memory.read(hl.pair), 1, 8); // SBC A, (HL)
+            case 0x9F: return sbc_a(af.high); // SBC A, A
             case 0xA0: return and_a(bc.high); // AND B
             case 0xA1: return and_a(bc.low);  // AND C
             case 0xA2: return and_a(de.high); // AND D
@@ -635,37 +1027,54 @@ namespace cpu
             case 0xCB: return cb_execute_instruction(memory); // CB Prefix
             case 0xCC: return call_a16(memory, memory.read_word(pc + 1), get_flag(af.low, FLAG_ZERO)); // CALL Z, a16
             case 0xCD: return call_a16(memory, memory.read_word(pc + 1)); // CALL a16
+            case 0xCE: return adc_a(memory.read(pc + 1), 2, 8); // ADC A, n8
             case 0xCF: return rst(memory, 0x08); // RST 08H
             case 0xD0: return ret(memory, !get_flag(af.low, FLAG_CARRY), 20); // RET NC
             case 0xD1: return pop_rr(memory, de.pair); // POP DE
             case 0xD2: return jp_a16(memory.read_word(pc + 1), !get_flag(af.low, FLAG_CARRY)); // JP NC, a16
+            case 0xD3: return -1; // Illegal opcode
             case 0xD4: return call_a16(memory, memory.read_word(pc + 1), !get_flag(af.low, FLAG_CARRY)); // CALL NC, a16
             case 0xD5: return push_rr(memory, de.pair); // PUSH DE
+            case 0xD6: return sub_a(memory.read(pc + 1), 2, 8); // SUB n8
             case 0xD7: return rst(memory, 0x10); // RST 10H
             case 0xD8: return ret(memory, get_flag(af.low, FLAG_CARRY), 20); // RET C
             case 0xD9: return ret(memory, true, 16, true); // RETI
             case 0xDA: return jp_a16(memory.read_word(pc + 1), get_flag(af.low, FLAG_CARRY)); // JP C, a16
+            case 0xDB: return -1; // Illegal opcode
             case 0xDC: return call_a16(memory, memory.read_word(pc + 1), get_flag(af.low, FLAG_CARRY)); // CALL C, a16
+            case 0xDD: return -1; // Illegal opcode
+            case 0xDE: return sbc_a(memory.read(pc + 1), 2, 8); // SBC A, n8
             case 0xDF: return rst(memory, 0x18); // RST 18H
             case 0xE0: return ldh(memory, memory.read(pc + 1), true, 2, 12); // LDH (a8), A
             case 0xE1: return pop_rr(memory, hl.pair); // POP HL
             case 0xE2: return ldh(memory, bc.low, true); // LDH (C), A
+            case 0xE3: return -1; // Illegal opcode
+            case 0xE4: return -1; // Illegal opcode
             case 0xE5: return push_rr(memory, hl.pair); // PUSH HL
             case 0xE6: return and_a(memory.read(pc + 1), 2, 8); // AND n8
             case 0xE7: return rst(memory, 0x20); // RST 20H
+            
             case 0xE9: return jp_hl(); // JP HL
             case 0xEA: return ld_mem_n8(memory, memory.read_word(pc + 1), af.high, 3, 16); // LD (a16), A
+            case 0xEB: return -1; // Illegal opcode
+            case 0xEC: return -1; // Illegal opcode
+            case 0xED: return -1; // Illegal opcode
             case 0xEE: return xor_a(memory.read(pc + 1), 2, 8); // XOR n8
             case 0xEF: return rst(memory, 0x28); // RST 28H
             case 0xF0: return ldh(memory, memory.read(pc + 1), false, 2, 12); // LDH A, (a8)
             case 0xF1: return pop_rr(memory, af.pair); // POP AF
             case 0xF2: return ldh(memory, bc.low, false); // LDH A, (C)
             case 0xF3: return di(); // DI
+            case 0xF4: return -1; // Illegal opcode
             case 0xF5: return push_rr(memory, af.pair); // PUSH AF
             case 0xF6: return or_a(memory.read(pc + 1), 2, 8); // OR n8
             case 0xF7: return rst(memory, 0x30); // RST 30H
+            
+            
             case 0xFA: return ld_r_n8(af.high, memory.read(memory.read_word(pc + 1)), 3, 16); // LD A, (a16)
             case 0xFB: return ei(); // EI
+            case 0xFC: return -1; // Illegal opcode
+            case 0xFD: return -1; // Illegal opcode
             case 0xFE: return cp_a(memory.read(pc + 1), 2, 8); // CP n8
             case 0xFF: return rst(memory, 0x38); // RST 38H
             default:
@@ -679,6 +1088,29 @@ namespace cpu
         uint8_t reg_index = opcode & 0x07;  // Extract register bits
         uint8_t* regs[] = {&bc.high, &bc.low, &de.high, &de.low, 
                             &hl.high, &hl.low, nullptr, &af.high};
+        // RLC (0x00-0x07)
+        if (opcode >= 0x00 && opcode <= 0x07) {
+            if (reg_index == 6) return rlc_mem_hl(memory);
+            return rlc_r(*regs[reg_index]);
+        }
+        
+        // RRC (0x08-0x0F)
+        if (opcode >= 0x08 && opcode <= 0x0F) {
+            if (reg_index == 6) return rrc_mem_hl(memory);
+            return rrc_r(*regs[reg_index]);
+        }
+        
+        // RL (0x10-0x17)
+        if (opcode >= 0x10 && opcode <= 0x17) {
+            if (reg_index == 6) return rl_mem_hl(memory);
+            return rl_r(*regs[reg_index]);
+        }
+        
+        // RR (0x18-0x1F)
+        if (opcode >= 0x18 && opcode <= 0x1F) {
+            if (reg_index == 6) return rr_mem_hl(memory);
+            return rr_r(*regs[reg_index]);
+        }
         
         // SLA (0x20-0x27)
         if (opcode >= 0x20 && opcode <= 0x27) {
@@ -686,11 +1118,23 @@ namespace cpu
             return sla_r(*regs[reg_index]);
         }
 
+        // SRA (0x28-0x2F)
+        if (opcode >= 0x28 && opcode <= 0x2F) {
+            if (reg_index == 6) return sra_mem_hl(memory);
+            return sra_r(*regs[reg_index]);
+        }
+
         // SWAP (0x30-0x37)
         if (opcode >= 0x30 && opcode <= 0x37) {
             if (reg_index == 6) return swap_mem_hl(memory);
             return swap_r(*regs[reg_index]);
         }
+
+        // SRL (0x38-0x3F)
+        if (opcode >= 0x38 && opcode <= 0x3F) {
+            if (reg_index == 6) return srl_mem_hl(memory);
+            return srl_r(*regs[reg_index]);
+        }   
 
         // BIT b, r and BIT b, (HL) (0x40-0x7F)
         if (opcode >= 0x40 && opcode <= 0x7F) {
@@ -706,6 +1150,13 @@ namespace cpu
             return res(bit, *regs[reg_index]);
         }
         
+        // SET b, r and SET b, (HL) (0xC0-0xFF)
+        if (opcode >= 0xC0 && opcode <= 0xFF) {
+            uint8_t bit = (opcode - 0xC0) / 8;
+            if (reg_index == 6) return set_mem_hl(memory, bit);
+            return set(bit, *regs[reg_index]);
+        }
+
         unimplemented_instruction(0xCB00 | opcode, memory.rom);
         return -1;
     }
