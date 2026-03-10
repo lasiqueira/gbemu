@@ -18,6 +18,8 @@ namespace cpu
         
         ime = false;
         ime_scheduled = false;
+        stopped = false;
+        halted = false;
 #ifdef GBEMU_DEBUG
         instructions_executed = 0;
 #endif
@@ -75,10 +77,10 @@ namespace cpu
         return cycles; // Return the cycle count
     }
 
-    int CPU::ld_rr_n16(uint16_t& dest, uint16_t value) {
+    int CPU::ld_rr_n16(uint16_t& dest, uint16_t value, int length, int cycles) {
         dest = value;
-        pc += 3; // Move past the instruction and operands
-        return 12; // LD rr, n16 takes 12 cycles
+        pc += length; // Move past the instruction and operands
+        return cycles; // Return the cycle count
     }
     
     int CPU::ld_r_n8(uint8_t& dest, uint8_t value, int length, int cycles) {
@@ -526,7 +528,8 @@ namespace cpu
     }
 
     int CPU::halt() {
-        //TODO implement HALT behavior (stop CPU until interrupt, with HALT bug)
+        // NOTE: HALT bug not implemented (when IME=0 and interrupt pending, PC should not increment on next fetch)
+        halted = true; // Set the CPU to halted state
         pc += 1; // Move past the instruction
         return 4; // HALT takes 4 cycles
     }
@@ -698,38 +701,6 @@ namespace cpu
         return 16; // RR (HL) takes 16 cycles
     }
 
-    int CPU::sla_r(uint8_t& reg) {
-        bool msb = (reg & 0x80) != 0;
-        reg <<= 1;
-        reg &= 0xFE; // LSB is always 0
-
-        // Set flags
-        set_flag(af.low, FLAG_ZERO, reg == 0);
-        set_flag(af.low, FLAG_SUBTRACT, false);
-        set_flag(af.low, FLAG_HALF_CARRY, false);
-        set_flag(af.low, FLAG_CARRY, msb);
-
-        pc += 2; // Move past the instruction
-        return 8; // SLA r takes 8 cycles
-    }
-    
-    int CPU::sla_mem_hl(Memory& memory) {
-        uint8_t value = memory.read(hl.pair);
-        bool msb = (value & 0x80) != 0;
-        value <<= 1;
-        value &= 0xFE; // LSB is always 0
-
-        // Set flags
-        set_flag(af.low, FLAG_ZERO, value == 0);
-        set_flag(af.low, FLAG_SUBTRACT, false);
-        set_flag(af.low, FLAG_HALF_CARRY, false);
-        set_flag(af.low, FLAG_CARRY, msb);
-
-        memory.write(hl.pair, value);
-        pc += 2; // Move past the instruction
-        return 16; // SLA (HL) takes 16 cycles
-    }
-
     int CPU::sra_r(uint8_t& reg) {
         bool msb = (reg & 0x80) != 0;
         bool lsb = (reg & 0x01) != 0;
@@ -807,10 +778,47 @@ namespace cpu
     }
 
     int CPU::stop() {
-        //TODO implement STOP behavior (stop CPU and LCD until button press)
+        stopped = true;
         pc += 2; // Move past the instruction (STOP is 2 bytes)
         return 4; // STOP takes 4 cycles
     }
+
+    int CPU::ld_mem_sp(Memory& memory, uint16_t addr) {
+        memory.write_word(addr, sp);
+        pc += 3; // Move past the instruction and operands
+        return 20; // LD (a16), SP takes 20 cycles
+    }
+
+    int CPU::add_sp_e8(int8_t value) {
+        uint16_t result = sp + value;
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, false);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, ((sp & 0x0F) + (value & 0x0F)) > 0x0F);
+        set_flag(af.low, FLAG_CARRY, ((sp & 0xFF) + (value & 0xFF)) > 0xFF);
+
+        sp = result;
+
+        pc += 2; // Move past the instruction and operand
+        return 16; // ADD SP, e8 takes 16 cycles
+    }
+
+    int CPU::ld_hl_sp_e8(int8_t value) {
+        uint16_t result = sp + value;
+
+        // Set flags
+        set_flag(af.low, FLAG_ZERO, false);
+        set_flag(af.low, FLAG_SUBTRACT, false);
+        set_flag(af.low, FLAG_HALF_CARRY, ((sp & 0x0F) + (value & 0x0F)) > 0x0F);
+        set_flag(af.low, FLAG_CARRY, ((sp & 0xFF) + (value & 0xFF)) > 0xFF);
+
+        hl.pair = result;
+
+        pc += 2; // Move past the instruction and operand
+        return 12; // LD HL, SP+e8 takes 12 cycles
+    }
+
     // Execute one instruction, return cycles taken
     int CPU::execute_instruction(Memory& memory) {
 #ifdef GBEMU_DEBUG
@@ -829,7 +837,7 @@ namespace cpu
             case 0x05: return dec_r(bc.high); // DEC B            
             case 0x06: return ld_r_n8(bc.high, memory.read(pc + 1)); // LD B, n8
             case 0x07: return rlca(); // RLCA
-
+            case 0x08: return ld_mem_sp(memory, memory.read_word(pc + 1)); // LD (a16), SP
             case 0x09: return add_hl_rr(bc.pair); // ADD HL, BC
             case 0x0A: return ld_r_n8(af.high, memory.read(bc.pair), 1, 8); // LD A, (BC)
             case 0x0B: return dec_rr(bc.pair); // DEC BC
@@ -1053,7 +1061,7 @@ namespace cpu
             case 0xE5: return push_rr(memory, hl.pair); // PUSH HL
             case 0xE6: return and_a(memory.read(pc + 1), 2, 8); // AND n8
             case 0xE7: return rst(memory, 0x20); // RST 20H
-            
+            case 0xE8: return add_sp_e8(static_cast<int8_t>(memory.read(pc + 1))); // ADD SP, e8
             case 0xE9: return jp_hl(); // JP HL
             case 0xEA: return ld_mem_n8(memory, memory.read_word(pc + 1), af.high, 3, 16); // LD (a16), A
             case 0xEB: return -1; // Illegal opcode
@@ -1069,8 +1077,8 @@ namespace cpu
             case 0xF5: return push_rr(memory, af.pair); // PUSH AF
             case 0xF6: return or_a(memory.read(pc + 1), 2, 8); // OR n8
             case 0xF7: return rst(memory, 0x30); // RST 30H
-            
-            
+            case 0xF8: return ld_hl_sp_e8(static_cast<int8_t>(memory.read(pc + 1))); // LD HL, SP + e8
+            case 0xF9: return ld_rr_n16(sp, hl.pair, 1, 8); // LD SP, HL
             case 0xFA: return ld_r_n8(af.high, memory.read(memory.read_word(pc + 1)), 3, 16); // LD A, (a16)
             case 0xFB: return ei(); // EI
             case 0xFC: return -1; // Illegal opcode

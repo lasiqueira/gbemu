@@ -56,6 +56,8 @@ namespace cpu
 
         bool ime; // Interrupt Master Enable Flag (1 byte)
         bool ime_scheduled; // Delayed IME enable (1 byte)
+        bool stopped; // CPU stopped state (1 byte)
+        bool halted; // CPU halted state (1 byte)
         
         CPU();
         
@@ -64,7 +66,7 @@ namespace cpu
         int nop();
         int jp_a16(uint16_t addr, bool condition = true);
         int xor_a(uint8_t value, int length = 1, int cycles = 4);
-        int ld_rr_n16(uint16_t& dest, uint16_t value);
+        int ld_rr_n16(uint16_t& dest, uint16_t value, int length = 3, int cycles = 12);
         int ld_r_n8(uint8_t& dest, uint8_t value, int length = 2, int cycles = 8);
         int ld_hlp_a(Memory& memory, bool increment);
         int dec_r(uint8_t& reg);
@@ -103,6 +105,10 @@ namespace cpu
         int sub_a(uint8_t value, int length = 1, int cycles = 4);
         int sbc_a(uint8_t value, int length = 1, int cycles = 4);
         int stop();
+        int ld_mem_sp(Memory& memory, uint16_t addr);
+        int add_sp_e8(int8_t offset);
+        int ld_hl_sp_e8(int8_t offset);
+
         //CB-prefixed instructions
         int cb_execute_instruction(Memory& memory);
         int swap_r(uint8_t& reg);
