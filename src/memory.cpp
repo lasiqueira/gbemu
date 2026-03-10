@@ -1,7 +1,8 @@
 #include "memory.h"
 #include <print>
+#include <cstdio>
 
-Memory::Memory() : ie_register(0), joypad_state(0xFF) {
+Memory::Memory() : ie_register(0), joypad_state(0xFF), div_counter(0), tima_cycles(0) {
     std::memset(vram, 0, sizeof(vram));
     std::memset(wram, 0, sizeof(wram));
     std::memset(oam, 0, sizeof(oam));
@@ -137,6 +138,25 @@ void Memory::write(uint16_t addr, uint8_t value) {
         if (addr == 0xFF00) {
             io[0] = (value & 0x30) | 0xC0; // Keep only bits 4-5, set bits 6-7
         }
+        // Serial transfer control (0xFF02): complete immediately, print char, trigger interrupt
+        else if (addr == 0xFF02) {
+            io[0x02] = value;
+            if (value & 0x80) {
+                char c = static_cast<char>(io[0x01]);
+                putchar(c);
+                fflush(stdout);
+                io[0x02] &= ~0x80;  // Clear transfer-start bit (transfer complete)
+                io[0x0F] |= 0x08;   // Request serial interrupt (IF bit 3)
+            }
+        }
+        // DIV register (0xFF04): any write resets the internal counter
+        else if (addr == 0xFF04) {
+            div_counter = 0;
+            io[0x04] = 0;
+        }
+        else if (addr == 0xFF40) {
+            io[0x40] = value;
+        }
         // DMA transfer (0xFF46) - OAM DMA
         else if (addr == 0xFF46) {
             // DMA copies 160 bytes from XX00-XX9F to FE00-FE9F
@@ -171,4 +191,31 @@ uint16_t Memory::read_word(uint16_t addr) const {
 void Memory::write_word(uint16_t addr, uint16_t value) {
     write(addr, value & 0xFF);
     write(addr + 1, (value >> 8) & 0xFF);
+}
+
+void Memory::tick_timers(int cycles) {
+    // Update DIV (internal 16-bit counter, upper byte exposed at 0xFF04)
+    div_counter = (div_counter + cycles) & 0xFFFF;
+    io[0x04] = static_cast<uint8_t>(div_counter >> 8);
+
+    // Update TIMA if timer is enabled (TAC bit 2)
+    uint8_t tac = io[0x07]; // 0xFF07
+    if (!(tac & 0x04)) return;
+
+    // TIMA increment thresholds (CPU cycles per tick)
+    static const int tima_thresholds[4] = {1024, 16, 64, 256};
+    int threshold = tima_thresholds[tac & 0x03];
+
+    tima_cycles += cycles;
+    while (tima_cycles >= threshold) {
+        tima_cycles -= threshold;
+        uint8_t tima = io[0x05]; // 0xFF05
+        tima++;
+        if (tima == 0) {
+            io[0x05] = io[0x06]; // Reset TIMA to TMA (0xFF06)
+            io[0x0F] |= 0x04;   // Request timer interrupt (IF bit 2)
+        } else {
+            io[0x05] = tima;
+        }
+    }
 }

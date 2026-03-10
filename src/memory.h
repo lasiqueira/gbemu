@@ -17,8 +17,15 @@ struct Memory {
     
     // Joypad state
     uint8_t joypad_state;      // Current button states (0 = pressed, 1 = released)
-    
+
+    // Timer state
+    int div_counter;           // Internal 16-bit divider counter; DIV register = upper byte
+    int tima_cycles;           // Cycle accumulator for TIMA increments
+
     Memory();
+
+    // Advance timer counters by the given number of CPU cycles
+    void tick_timers(int cycles);
     
     // Load ROM from file data
     void load_rom(const std::vector<uint8_t>& rom_data);

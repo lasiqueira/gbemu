@@ -941,14 +941,14 @@ namespace cpu
             case 0x6D: return ld_r_n8(hl.low, hl.low, 1, 4);  // LD L, L
             case 0x6E: return ld_r_n8(hl.low, memory.read(hl.pair), 1, 8); // LD L, (HL)
             case 0x6F: return ld_r_n8(hl.low, af.high, 1, 4); // LD L, A
-            case 0x70: return ld_mem_n8(memory, hl.pair, bc.high); // LD (HL), B
-            case 0x71: return ld_mem_n8(memory, hl.pair, bc.low);  // LD (HL), C
-            case 0x72: return ld_mem_n8(memory, hl.pair, de.high); // LD (HL), D
-            case 0x73: return ld_mem_n8(memory, hl.pair, de.low);  // LD (HL), E
-            case 0x74: return ld_mem_n8(memory, hl.pair, hl.high); // LD (HL), H
-            case 0x75: return ld_mem_n8(memory, hl.pair, hl.low);  // LD (HL), L
+            case 0x70: return ld_mem_n8(memory, hl.pair, bc.high, 1, 8); // LD (HL), B
+            case 0x71: return ld_mem_n8(memory, hl.pair, bc.low,  1, 8); // LD (HL), C
+            case 0x72: return ld_mem_n8(memory, hl.pair, de.high, 1, 8); // LD (HL), D
+            case 0x73: return ld_mem_n8(memory, hl.pair, de.low,  1, 8); // LD (HL), E
+            case 0x74: return ld_mem_n8(memory, hl.pair, hl.high, 1, 8); // LD (HL), H
+            case 0x75: return ld_mem_n8(memory, hl.pair, hl.low,  1, 8); // LD (HL), L
             case 0x76: return halt(); // HALT
-            case 0x77: return ld_mem_n8(memory, hl.pair, af.high); // LD (HL), A
+            case 0x77: return ld_mem_n8(memory, hl.pair, af.high, 1, 8); // LD (HL), A
             case 0x78: return ld_r_n8(af.high, bc.high, 1, 4); // LD A, B
             case 0x79: return ld_r_n8(af.high, bc.low, 1, 4);  // LD A, C
             case 0x7A: return ld_r_n8(af.high, de.high, 1, 4); // LD A, D
@@ -1070,7 +1070,11 @@ namespace cpu
             case 0xEE: return xor_a(memory.read(pc + 1), 2, 8); // XOR n8
             case 0xEF: return rst(memory, 0x28); // RST 28H
             case 0xF0: return ldh(memory, memory.read(pc + 1), false, 2, 12); // LDH A, (a8)
-            case 0xF1: return pop_rr(memory, af.pair); // POP AF
+            case 0xF1: { // POP AF - lower 4 bits of F are always 0
+                int result = pop_rr(memory, af.pair);
+                af.low &= 0xF0;
+                return result;
+            }
             case 0xF2: return ldh(memory, bc.low, false); // LDH A, (C)
             case 0xF3: return di(); // DI
             case 0xF4: return -1; // Illegal opcode

@@ -65,11 +65,12 @@ int GameBoy::step_frame() {
             return cycles; // Error occurred
         }
         cycles_executed += cycles;
-        
-        // Update PPU
+
+        // Update PPU and timers
         if(!cpu.stopped) {
             ppu.step(cycles, memory);
         }
+        memory.tick_timers(cycles);
     }
     return cycles_executed;
 }
