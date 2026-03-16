@@ -138,10 +138,14 @@ void Memory::write(uint16_t addr, uint8_t value) {
         if (addr == 0xFF00) {
             io[0] = (value & 0x30) | 0xC0; // Keep only bits 4-5, set bits 6-7
         }
-        // Serial transfer control (0xFF02): complete immediately, print char, trigger interrupt
+        // Serial transfer control (0xFF02)
+        // Bit 7: Transfer Start, Bit 0: Clock Select (0=external/slave, 1=internal/master)
+        // Only auto-complete when using internal clock (master mode, 0x81).
+        // External clock (slave, 0x80) requires a real linked partner to clock the transfer;
+        // without one it stalls forever — completing it would fake a second Game Boy.
         else if (addr == 0xFF02) {
             io[0x02] = value;
-            if (value & 0x80) {
+            if ((value & 0x81) == 0x81) { // Transfer start + internal clock
                 char c = static_cast<char>(io[0x01]);
                 putchar(c);
                 fflush(stdout);

@@ -25,7 +25,7 @@ Detailed development documentation with step-by-step explanations is available i
   - Flag register management (Z, N, H, C)
   - Instruction execution with cycle-accurate timing
   - Frame-based execution loop (~59.7 Hz)
-  - Interrupt handling (VBlank, LCD STAT)
+  - Interrupt handling (VBlank, LCD STAT, Timer, Serial)
 
 - **PPU (Picture Processing Unit)**
   - Background layer with scrolling (SCX/SCY registers)
@@ -46,6 +46,15 @@ Detailed development documentation with step-by-step explanations is available i
     - Nintendo Pro Controllers
     - Generic controllers via SDL gamepad database
   - Hot-plugging support for controllers
+
+- **Timer System**
+  - DIV register (0xFF04)
+  - TIMA/TMA/TAC with all 4 clock speeds
+  - Timer overflow interrupt
+
+- **Serial Port**
+  - Master-mode (0x81) transfers complete immediately for Blargg test compatibility
+  - Slave-mode (0x80) transfers stall — prevents false link-cable detection
 
 - **Memory Management**
   - 64KB address space
@@ -68,7 +77,19 @@ Detailed development documentation with step-by-step explanations is available i
 ### Prerequisites
 - C++23 compatible compiler (Clang 17+, GCC 13+)
 - CMake 3.20+
-- SDL3 (automatically fetched via CMake FetchContent)
+- Git (for submodule initialization)
+
+### Getting the Source
+
+After cloning the repository, initialize and fetch the submodules (SDL3 and ImGui):
+
+```bash
+# Clone and initialize submodules in one step
+git clone --recurse-submodules https://github.com/yourusername/gbemu.git
+
+# Or, if you already cloned without submodules
+git submodule update --init --recursive
+```
 
 ### Build Steps
 
@@ -93,6 +114,8 @@ cmake --build build
 
 **Windows: Use clang-cl for better optimization:**
 ```powershell
+# If you previously configured with MSVC, remove the build dir first
+Remove-Item -Recurse -Force build
 cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 && cmake -B build -G "Visual Studio 17 2022" -T ClangCL'
 cmake --build build --config Release
 ```
@@ -368,21 +391,20 @@ Addr  Instruction           Flags       Len  Cycles
 
 ## Current Status
 
-**Playable with full graphics and input support!**
+**Fully playable!**
 
-The emulator successfully runs Tetris and other Game Boy games with complete rendering and input. Over 6.4 million CPU cycles execute before hitting unimplemented instructions.
+The emulator successfully runs Tetris from title screen through full gameplay with complete rendering, input, timers, and correct serial port behaviour.
 
 ### Implemented Features
 
-**CPU Instructions: ~75% of instruction set**
+**CPU Instructions: ~100% of instruction set**
 - ✅ Control flow: JP, JR, CALL, RET (conditional/unconditional)
 - ✅ Data transfer: LD (all variants: r8, r16, immediate, (HL+/-), direct memory, (BC)/(DE))
-- ✅ Arithmetic: INC, DEC, ADD, CP, ADC, SBC (8-bit and 16-bit variants)
+- ✅ Arithmetic: INC, DEC, ADD, SUB, CP, ADC, SBC (8-bit and 16-bit variants, all registers + immediate)
 - ✅ Logical: XOR, OR, AND, BIT, RES, SET, RL, RLC, RR, RRC, SLA, SRA, SRL, SWAP
 - ✅ Interrupt control: DI, EI, RETI
 - ✅ Stack operations: PUSH, POP (all register pairs)
-- ✅ Miscellaneous: NOP, HALT, DAA, CPL, CCF, SCF
-- ⚠️ Some arithmetic variants remain (e.g., SUB immediate)
+- ✅ Miscellaneous: NOP, HALT, DAA, CPL, CCF, SCF, RLCA, RRCA, RLA, RRA
 
 **Graphics/PPU:**
 - ✅ Background rendering with scrolling (SCX/SCY)
@@ -391,7 +413,16 @@ The emulator successfully runs Tetris and other Game Boy games with complete ren
 - ✅ OAM scanning (40 sprites, 10 per scanline)
 - ✅ Sprite attributes (priority, flip X/Y, palettes)
 - ✅ All PPU modes and timing (456 cycles per scanline)
-- ✅ V-Blank and LCD STAT interrupts
+- ✅ V-Blank, LCD STAT, and Timer interrupts
+
+**Timers:**
+- ✅ DIV register (0xFF04)
+- ✅ TIMA/TMA/TAC timer with all 4 clock speeds
+- ✅ Timer overflow interrupt
+
+**Serial:**
+- ✅ Master-mode (internal clock) transfers complete immediately
+- ✅ Slave-mode (external clock) transfers stall — no false link-cable detection
 
 **Input:**
 - ✅ Joypad register (0xFF00) implementation
@@ -405,22 +436,20 @@ The emulator successfully runs Tetris and other Game Boy games with complete ren
 
 ### Test ROM Results
 
-**Tetris (6.4M+ cycles executed):**
+**Tetris — fully playable:**
 - ✅ Boots to title screen with full graphics
-- ✅ Background rendering working
-- ✅ Window layer for UI elements
-- ✅ Sprite rendering for falling blocks (when implemented in game)
+- ✅ Title screen demo timeout (timer-driven countdown)
+- ✅ 1-player / 2-player mode selection
+- ✅ Falling pieces with correct sprite rendering
+- ✅ Background and window layer for playfield and UI
 - ✅ Input functional (keyboard and gamepad)
-- ✅ V-Blank interrupts working
-- ⚠️ Hits unimplemented SUB instruction during gameplay
+- ✅ V-Blank, LCD STAT, and timer interrupts working
+- ✅ Serial port: master-mode transfers complete; slave-mode stalls (no false link-cable detection)
 
 ## Future Work
 
-- **Complete remaining CPU instructions** (SUB immediate, other variants)
 - **Sound/APU emulation** (4 audio channels, wave patterns)
-- **Timer system** (DIV, TIMA, TMA registers and interrupts)
 - **Memory Bank Controllers** (MBC1, MBC3, MBC5 for larger ROMs)
-- **Serial communication** (link cable support)
 - **Save state functionality**
 - **Debugger interface** (memory viewer, breakpoints)
 - **Game Boy Color support**

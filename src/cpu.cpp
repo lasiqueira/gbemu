@@ -458,7 +458,7 @@ namespace cpu
         af.high = (af.high << 1) | (msb ? 1 : 0);
 
         // Set flags
-        set_flag(af.low, FLAG_ZERO, af.high == 0);
+        set_flag(af.low, FLAG_ZERO, false);
         set_flag(af.low, FLAG_SUBTRACT, false);
         set_flag(af.low, FLAG_HALF_CARRY, false);
         set_flag(af.low, FLAG_CARRY, msb);
@@ -825,6 +825,10 @@ namespace cpu
         // Increment counter (debug only)
         // Console printing disabled for performance
         instructions_executed++;
+        pc_history.push_back(pc);
+        if(pc_history.size() > 200) {
+            pc_history.pop_front();
+        }
 #endif
 
         uint8_t opcode = memory.read(pc);

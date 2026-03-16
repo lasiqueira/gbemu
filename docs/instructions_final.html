@@ -55,7 +55,7 @@
     af.high = (af.high << 1) | (msb ? 1 : 0);
 
     // Set flags
-    set_flag(af.low, FLAG_ZERO, af.high == 0);
+    set_flag(af.low, FLAG_ZERO, false);
     set_flag(af.low, FLAG_SUBTRACT, false);
     set_flag(af.low, FLAG_HALF_CARRY, false);
     set_flag(af.low, FLAG_CARRY, msb);
@@ -117,7 +117,7 @@
     return 4;
 }</code></pre>
 
-            <p><strong>Note:</strong> Unlike their CB-prefixed counterparts, these accumulator rotates never set the zero flag in their documented behavior for RRCA, RLA, and RRA. RLCA can set the zero flag if the result is zero.</p>
+            <p><strong>Note:</strong> Unlike their CB-prefixed counterparts, all four accumulator rotates (RLCA, RRCA, RLA, RRA) always clear the zero flag regardless of the result. This distinguishes them from the CB-prefixed versions which do set Z based on the result.</p>
         </section>
 
 

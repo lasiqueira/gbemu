@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <deque>
 
 // Debug flag - can be defined via CMake with -DGBEMU_DEBUG=ON
 // Or uncomment the line below to always enable it:
@@ -43,6 +44,8 @@ namespace cpu
     {
 #ifdef GBEMU_DEBUG
         uint64_t instructions_executed; // Total instructions executed (8 bytes) - debug only
+        std::deque<uint16_t> pc_history; // History of recently executed PCs for debugging (stores last 10)
+
 #endif
         
         // CPU registers - direct members for cleaner access (2 bytes each)
