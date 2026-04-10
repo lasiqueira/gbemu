@@ -404,7 +404,10 @@ int main(int argc, char** argv)
                 // Highlight current PC
                 if (byte_addr == gameboy.cpu.pc)
                 {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                    ImVec2 pos = ImGui::GetCursorScreenPos();
+                    ImVec2 size = ImGui::CalcTextSize("FF");
+                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
                     ImGui::Text("%02X", byte);
                     ImGui::PopStyleColor();
                 }
@@ -443,7 +446,10 @@ int main(int argc, char** argv)
                 bool is_current = (i == history.size() - 1);
                 if (is_current)
                 {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                    ImVec2 pos = ImGui::GetCursorScreenPos();
+                    ImVec2 size = ImGui::CalcTextSize(line.c_str());
+                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
                 }
                 ImGui::TextUnformatted(line.c_str());
                 if(is_current)
