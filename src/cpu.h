@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#include <deque>
 
 // Debug flag - can be defined via CMake with -DGBEMU_DEBUG=ON
 // Or uncomment the line below to always enable it:
@@ -43,6 +44,8 @@ namespace cpu
     {
 #ifdef GBEMU_DEBUG
         uint64_t instructions_executed; // Total instructions executed (8 bytes) - debug only
+        std::deque<uint16_t> pc_history; // History of recently executed PCs for debugging (stores last 10)
+
 #endif
         
         // CPU registers - direct members for cleaner access (2 bytes each)
@@ -56,6 +59,9 @@ namespace cpu
 
         bool ime; // Interrupt Master Enable Flag (1 byte)
         bool ime_scheduled; // Delayed IME enable (1 byte)
+        bool stopped; // CPU stopped state (1 byte)
+        bool halted; // CPU halted state (1 byte)
+        bool halt_bug; // HALT bug state (1 byte)
         
         CPU();
         
@@ -64,7 +70,7 @@ namespace cpu
         int nop();
         int jp_a16(uint16_t addr, bool condition = true);
         int xor_a(uint8_t value, int length = 1, int cycles = 4);
-        int ld_rr_n16(uint16_t& dest, uint16_t value);
+        int ld_rr_n16(uint16_t& dest, uint16_t value, int length = 3, int cycles = 12);
         int ld_r_n8(uint8_t& dest, uint8_t value, int length = 2, int cycles = 8);
         int ld_hlp_a(Memory& memory, bool increment);
         int dec_r(uint8_t& reg);
@@ -92,6 +98,20 @@ namespace cpu
         int jp_hl();
         int inc_mem_hl(Memory& memory);
         int dec_mem_hl(Memory& memory);
+        int rlca();
+        int rrca();
+        int rla();
+        int rra();
+        int scf();
+        int ccf();
+        int halt(Memory& memory);
+        int adc_a(uint8_t value, int length = 1, int cycles = 4);
+        int sub_a(uint8_t value, int length = 1, int cycles = 4);
+        int sbc_a(uint8_t value, int length = 1, int cycles = 4);
+        int stop();
+        int ld_mem_sp(Memory& memory, uint16_t addr);
+        int add_sp_e8(int8_t offset);
+        int ld_hl_sp_e8(int8_t offset);
 
         //CB-prefixed instructions
         int cb_execute_instruction(Memory& memory);
@@ -103,6 +123,20 @@ namespace cpu
         int res_mem_hl(Memory& memory, uint8_t bit);
         int sla_r(uint8_t& reg);
         int sla_mem_hl(Memory& memory);
+        int rlc_r(uint8_t& reg);
+        int rlc_mem_hl(Memory& memory);
+        int rrc_r(uint8_t& reg);
+        int rrc_mem_hl(Memory& memory);
+        int rl_r(uint8_t& reg);
+        int rl_mem_hl(Memory& memory);
+        int rr_r(uint8_t& reg);
+        int rr_mem_hl(Memory& memory);
+        int sra_r(uint8_t& reg);
+        int sra_mem_hl(Memory& memory);
+        int srl_r(uint8_t& reg);
+        int srl_mem_hl(Memory& memory);
+        int set(uint8_t bit, uint8_t& reg);
+        int set_mem_hl(Memory& memory, uint8_t bit);
         
         // Execute one instruction, return cycles taken
         int execute_instruction(Memory& memory);

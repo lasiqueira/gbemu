@@ -38,19 +38,39 @@ int GameBoy::step_frame() {
             cpu.ime = true;
             cpu.ime_scheduled = false;
         }
+
+        // Check for wake from HALT/STOP
+        uint8_t if_reg = memory.read(IO_IF);
+        uint8_t ie_reg = memory.read(IO_IE);
+        uint8_t pending = if_reg & ie_reg & 0x1F;
         
-        // Handle interrupts before executing the next instruction
-        handle_interrupts();
-        
-        int cycles = step();
+        if(cpu.halted && pending) {
+            cpu.halted = false; // Wake from HALT
+        }
+
+        if(cpu.stopped && (if_reg & INT_JOYPAD)) {
+            cpu.stopped = false; // Wake from STOP
+        }
+
+        int cycles;
+        if(cpu.halted || cpu.stopped) {
+            cycles = 4; // HALT and STOP consume 4 cycles while halted/stopped
+        } else {
+            handle_interrupts();
+            cycles = step();
+        }
+
         if (cycles < 0) {
             running = false;
             return cycles; // Error occurred
         }
         cycles_executed += cycles;
-        
-        // Update PPU
-        ppu.step(cycles, memory);
+
+        // Update PPU and timers
+        if(!cpu.stopped) {
+            ppu.step(cycles, memory);
+        }
+        memory.tick_timers(cycles);
     }
     return cycles_executed;
 }

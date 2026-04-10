@@ -81,19 +81,18 @@
                 <li><strong>Phase 4:</strong> Instruction Set - 8-bit and 16-bit operations (mostly done) ✓</li>
                 <li><strong>Phase 5:</strong> PPU Rendering - Background, window, and sprite layers ✓</li>
                 <li><strong>Phase 6:</strong> Input System - Keyboard and gamepad support ✓</li>
-                <li><strong>Phase 7:</strong> Complete CPU - Remaining instructions (In progress)</li>
+                <li><strong>Phase 7:</strong> Complete CPU - Remaining instructions ✓</li>
                 <li><strong>Phase 8:</strong> Audio (APU) - Sound channels and audio output (Planned)</li>
-                <li><strong>Phase 9:</strong> Timers - Timer registers and interrupts (Planned)</li>
+                <li><strong>Phase 9:</strong> Timers - Timer registers and interrupts ✓</li>
                 <li><strong>Phase 10:</strong> MBCs - Memory bank controllers for larger ROMs (Planned)</li>
-                <li><strong>Phase 11:</strong> Serial - Link cable communication (Planned)</li>
+                <li><strong>Phase 11:</strong> Serial - Master-mode transfers; slave-mode stall (no false link detection) ✓</li>
             </ul>
             
             <h3>Current Status</h3>
             <p>
-                The emulator currently features a CPU with many core instructions implemented, 
-                complete PPU with all three rendering layers (background, window, sprites), and dual input 
-                support (keyboard + gamepad). It successfully runs games like Tetris for over 6 million cycles 
-                before hitting unimplemented instructions.
+                The emulator features a complete CPU, full PPU with all three rendering layers (background, window, sprites), 
+                dual input support (keyboard + gamepad), timer interrupts, and correct serial port behaviour. 
+                It successfully runs Tetris from title screen through full gameplay.
             </p>
             
             <h4>What's Working</h4>
@@ -114,10 +113,8 @@
             
             <h4>In Progress / Planned</h4>
             <ul>
-                <li>⏳ Remaining CPU instructions (SUB immediate, some arithmetic variants)</li>
                 <li>⏳ Audio Processing Unit (APU) - 4 sound channels</li>
                 <li>⏳ Memory Bank Controllers (MBC1, MBC3, MBC5)</li>
-                <li>⏳ Serial communication for link cable</li>
                 <li>⏳ Save state support</li>
             </ul>
 
@@ -155,8 +152,8 @@
                 </div>
                 <div class="toc-item">
                     <span class="toc-number">7.</span>
-                    <span class="toc-link" style="color: #888;">Completing CPU Instructions</span>
-                    <span class="toc-status upcoming">TODO</span>
+                    <a href="instructions_final.html" class="toc-link">Completing CPU Instructions</a>
+                    <span class="toc-status complete">Complete</span>
                 </div>
                 <div class="toc-item">
                     <span class="toc-number">8.</span>

@@ -24,8 +24,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
     # clang-cl supports -march=native on Windows
     add_compile_options(-march=native -O3)
 elseif(MSVC)
-    # Regular MSVC uses /arch:AVX2
-    add_compile_options(/arch:AVX2 /O2)
+    # Regular MSVC uses /arch:AVX2; /O2 only in non-Debug configs to avoid conflict with /RTC1
+    add_compile_options(/arch:AVX2 $<$<NOT:$<CONFIG:Debug>>:/O2>)
 else()
     add_compile_options(-march=native -O3)
 endif()

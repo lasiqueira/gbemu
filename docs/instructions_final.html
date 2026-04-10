@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Instructions Implementation - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="input_and_rendering.html">← Input and Rendering</a>
+        <span class="current">Final Instructions</span>
+        <a href="index.html">Index →</a>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>Completing the Instruction Set</h2>
+        <p><em>Implementing the remaining opcodes in sequential order</em></p>
+
+        <section>
+            <h2>The Final Push</h2>
+            <p>After implementing the core instructions needed to get Tetris running (Part 1 and Part 2), this iteration completes the CPU instruction set by systematically adding all remaining opcodes. Rather than implementing only what's needed by specific games, this approach ensures comprehensive coverage of the Game Boy's instruction set.</p>
+
+            <p>This implementation focused on going from top to bottom through the missing opcodes, including all CB-prefixed instructions that weren't needed for basic gameplay but are essential for full compatibility.</p>
+
+            <h3>What's New in This Branch</h3>
+            <p>This implementation adds the following instructions that weren't in previous iterations:</p>
+            <ul>
+                <li><strong>Accumulator Rotates:</strong> RLCA, RRCA, RLA, RRA (faster 4-cycle versions)</li>
+                <li><strong>Arithmetic with Carry:</strong> ADC A, r/(HL)/n8 - all 9 variants</li>
+                <li><strong>Subtraction:</strong> SUB r/(HL)/n8 and SBC A, r/(HL)/n8 - 18 variants total</li>
+                <li><strong>Special Operations:</strong> DAA (BCD), SCF, CCF (carry flag), DEC (HL)</li>
+                <li><strong>Control:</strong> HALT, STOP (power-saving modes)</li>
+                <li><strong>CB-Prefixed Instructions:</strong> All 256 bit manipulation operations (RLC, RRC, RL, RR, SLA, SRA, SRL, BIT, SET - RES was already implemented)</li>
+            </ul>
+            
+            <p><em>Note: Instructions like ADD, XOR, AND, OR, CP, LD variants, PUSH/POP, jumps, calls, and 16-bit operations were already implemented in previous iterations.</em></p>
+        </section>
+
+        <section>
+            <h2>Rotate and Shift Instructions (Accumulator)</h2>
+            <p>The Game Boy has four special rotate instructions that operate only on the accumulator (register A). These are faster (4 cycles) than their CB-prefixed counterparts (8 cycles) and are commonly used for quick bit manipulations.</p>
+
+            <h3>RLCA - Rotate Left Circular Accumulator (0x07)</h3>
+            <p>Rotates A left. Bit 7 is copied to both bit 0 and the carry flag.</p>
+
+            <pre><code>int CPU::rlca() {
+    bool msb = (af.high & 0x80) != 0;
+    af.high = (af.high << 1) | (msb ? 1 : 0);
+
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, false);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, msb);
+
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <p><strong>Example:</strong> If A = 0b10110101, after RLCA: A = 0b01101011, Carry = 1</p>
+
+            <h3>RRCA - Rotate Right Circular Accumulator (0x0F)</h3>
+            <p>Rotates A right. Bit 0 is copied to both bit 7 and the carry flag.</p>
+
+            <pre><code>int CPU::rrca() {
+    bool lsb = (af.high & 0x01) != 0;
+    af.high = (af.high >> 1) | (lsb ? 0x80 : 0);
+
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, false);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h3>RLA - Rotate Left Through Accumulator (0x17)</h3>
+            <p>Rotates A left through carry. Bit 7 goes to carry, carry goes to bit 0.</p>
+
+            <pre><code>int CPU::rla() {
+    bool msb = (af.high & 0x80) != 0;
+    af.high = (af.high << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
+
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, false);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, msb);
+
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h3>RRA - Rotate Right Through Accumulator (0x1F)</h3>
+            <p>Rotates A right through carry. Bit 0 goes to carry, carry goes to bit 7.</p>
+
+            <pre><code>int CPU::rra() {
+    bool lsb = (af.high & 0x01) != 0;
+    af.high = (af.high >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
+
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, false);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <p><strong>Note:</strong> Unlike their CB-prefixed counterparts, all four accumulator rotates (RLCA, RRCA, RLA, RRA) always clear the zero flag regardless of the result. This distinguishes them from the CB-prefixed versions which do set Z based on the result.</p>
+        </section>
+
+
+
+        <section>
+            <h2>DAA - Decimal Adjust Accumulator (0x27)</h2>
+            <p>DAA is one of the most complex Game Boy instructions. It adjusts the accumulator after BCD (Binary Coded Decimal) arithmetic to ensure the result represents a valid BCD number.</p>
+
+            <h3>Understanding BCD</h3>
+            <p>In BCD, each byte represents two decimal digits (0-99). For example:</p>
+            <ul>
+                <li>0x42 represents decimal 42</li>
+                <li>0x99 represents decimal 99</li>
+            </ul>
+
+            <p>When you add BCD numbers using normal binary addition, you sometimes get invalid results. For example, 0x09 + 0x01 = 0x0A, but in BCD this should be 0x10 (decimal 10). DAA corrects these results.</p>
+
+            <h3>Implementation</h3>
+            <pre><code>int CPU::daa() {
+    uint8_t a = af.high;
+    uint8_t correction = 0;
+    
+    // Check if we need to adjust the lower nibble
+    if (get_flag(af.low, FLAG_HALF_CARRY) || 
+        (!get_flag(af.low, FLAG_SUBTRACT) && (a & 0x0F) > 9)) {
+        correction |= 0x06;
+    }
+    
+    // Check if we need to adjust the upper nibble
+    if (get_flag(af.low, FLAG_CARRY) || 
+        (!get_flag(af.low, FLAG_SUBTRACT) && a > 0x99)) {
+        correction |= 0x60;
+        set_flag(af.low, FLAG_CARRY, true);
+    }
+    
+    // Apply correction (add or subtract based on last operation)
+    if (get_flag(af.low, FLAG_SUBTRACT)) {
+        a -= correction;
+    } else {
+        a += correction;
+    }
+    
+    af.high = a;
+    set_flag(af.low, FLAG_ZERO, a == 0);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h3>How DAA Works</h3>
+            <p>DAA examines the accumulator and flags to determine what correction is needed:</p>
+            <ol>
+                <li>If the lower nibble is > 9 or half-carry is set, add/subtract 0x06 to/from the lower nibble</li>
+                <li>If the upper nibble is > 9 or carry is set, add/subtract 0x60 to/from the upper nibble</li>
+                <li>The direction (add or subtract) depends on the subtract flag from the previous operation</li>
+            </ol>
+
+            <p><strong>Example:</strong></p>
+            <pre><code>; Add 29 + 1 in BCD
+LD A, $29    ; A = 0x29 (BCD for 29)
+ADD A, $01   ; A = 0x2A (invalid BCD), H flag set
+DAA          ; A = 0x30 (BCD for 30), corrected!</code></pre>
+        </section>
+
+        <section>
+            <h2>Carry Flag Manipulation</h2>
+            
+            <h3>SCF - Set Carry Flag (0x37)</h3>
+            <p>Sets the carry flag to 1, clears N and H flags.</p>
+
+            <pre><code>int CPU::scf() {
+    set_flag(af.low, FLAG_CARRY, true);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h3>CCF - Complement Carry Flag (0x3F)</h3>
+            <p>Inverts the carry flag, clears N and H flags.</p>
+
+            <pre><code>int CPU::ccf() {
+    bool carry = get_flag(af.low, FLAG_CARRY);
+    set_flag(af.low, FLAG_CARRY, !carry);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <p>These instructions are useful for multi-byte arithmetic and bit manipulations where you need precise control over the carry flag.</p>
+        </section>
+
+        <section>
+            <h2>8-bit Arithmetic - Complete Families</h2>
+
+            <h3>ADD A, r/n8 (0x80-0x87, 0xC6)</h3>
+            <p>Adds a value to A and stores the result in A.</p>
+
+            <pre><code>int CPU::add_a(uint8_t value, int length, int cycles) {
+    uint16_t result = static_cast&lt;uint16_t&gt;(af.high) + static_cast&lt;uint16_t&gt;(value);
+
+    set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, ((af.high & 0x0F) + (value & 0x0F)) > 0x0F);
+    set_flag(af.low, FLAG_CARRY, result > 0xFF);
+
+    af.high = static_cast&lt;uint8_t&gt;(result & 0xFF);
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <p>Variants: ADD A, B/C/D/E/H/L/A/(HL)/n8</p>
+
+            <h3>ADC A, r/n8 (0x88-0x8F, 0xCE)</h3>
+            <p>Adds a value plus the carry flag to A. Essential for multi-byte addition.</p>
+
+            <pre><code>int CPU::adc_a(uint8_t value, int length, int cycles) {
+    uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
+    uint16_t result = static_cast&lt;uint16_t&gt;(af.high) + 
+                      static_cast&lt;uint16_t&gt;(value) + carry;
+
+    set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, 
+             ((af.high & 0x0F) + (value & 0x0F) + carry) > 0x0F);
+    set_flag(af.low, FLAG_CARRY, result > 0xFF);
+
+    af.high = static_cast&lt;uint8_t&gt;(result & 0xFF);
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <h3>SUB r/n8 (0x90-0x97, 0xD6)</h3>
+            <p>Subtracts a value from A.</p>
+
+            <pre><code>int CPU::sub_a(uint8_t value, int length, int cycles) {
+    uint16_t result = static_cast&lt;uint16_t&gt;(af.high) - static_cast&lt;uint16_t&gt;(value);
+
+    set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, (af.high & 0x0F) < (value & 0x0F));
+    set_flag(af.low, FLAG_CARRY, af.high < value);
+
+    af.high = static_cast&lt;uint8_t&gt;(result & 0xFF);
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <h3>SBC A, r/n8 (0x98-0x9F, 0xDE)</h3>
+            <p>Subtracts a value and the carry flag from A. Essential for multi-byte subtraction.</p>
+
+            <pre><code>int CPU::sbc_a(uint8_t value, int length, int cycles) {
+    uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
+    uint16_t result = static_cast&lt;uint16_t&gt;(af.high) - 
+                      static_cast&lt;uint16_t&gt;(value) - carry;
+
+    set_flag(af.low, FLAG_ZERO, (result & 0xFF) == 0);
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, (af.high & 0x0F) < ((value & 0x0F) + carry));
+    set_flag(af.low, FLAG_CARRY, af.high < (value + carry));
+
+    af.high = static_cast&lt;uint8_t&gt;(result & 0xFF);
+    pc += length;
+    return cycles;
+}</code></pre>
+
+            <p>Each family includes variants for all 8-bit registers and (HL) indirect access.</p>
+        </section>
+
+        <section>
+            <h2>DEC (HL) - Decrement Memory (0x35)</h2>
+            <p>While INC (HL) was already implemented, DEC (HL) was missing. This instruction decrements the byte pointed to by HL.</p>
+
+            <pre><code>int CPU::dec_mem_hl(Memory& memory) {
+    uint8_t value = memory.read(hl.pair);
+    uint8_t result = value - 1;
+
+    // Set flags
+    set_flag(af.low, FLAG_ZERO, result == 0);
+    set_flag(af.low, FLAG_SUBTRACT, true);
+    set_flag(af.low, FLAG_HALF_CARRY, (result & 0x0F) == 0x0F);
+
+    memory.write(hl.pair, result);
+    pc += 1;
+    return 12;
+}</code></pre>
+
+            <p>The half-carry flag is set when there's a borrow from bit 4. When decrementing from 0xX0 to 0xXF, the lower nibble goes from 0 to F, so the half-carry is set.</p>
+        </section>
+
+        <section>
+            <h2>HALT and STOP</h2>
+            
+            <h3>HALT (0x76)</h3>
+            <p>HALT puts the CPU into a low-power state until an interrupt occurs. The implementation sets the halted flag, which the main execution loop checks:</p>
+
+            <pre><code>int CPU::halt(Memory&amp; memory) {
+    uint8_t pending = memory.read(0xFF0F) &amp; memory.read(0xFFFF) &amp; 0x1F;
+    if (!ime &amp;&amp; pending) {
+        halt_bug = true; // HALT bug: next instruction fetch won't advance PC
+    } else {
+        halted = true; // Normal HALT: wait for interrupt
+    }
+    pc += 1;
+    return 4;
+}</code></pre>
+
+            <h3>Main Loop Integration</h3>
+            <p>The emulator's main loop checks the <code>halted</code> flag and handles wake conditions:</p>
+
+            <pre><code>// Check for wake from HALT
+uint8_t if_reg = memory.read(0xFF0F); // Interrupt Flag
+uint8_t ie_reg = memory.read(0xFFFF); // Interrupt Enable
+uint8_t pending = if_reg & ie_reg & 0x1F;
+
+if(cpu.halted && pending) {
+    cpu.halted = false; // Wake from HALT
+}
+
+if(cpu.halted || cpu.stopped) {
+    cycles = 4; // Consume 4 cycles while halted/stopped
+} else {
+    handle_interrupts();
+    cycles = step(); // Execute instruction
+}</code></pre>
+
+            <p>When halted, the CPU skips instruction execution but continues to consume cycles. Any enabled interrupt will wake the CPU from HALT.</p>
+
+            <h3>STOP (0x10)</h3>
+            <p>STOP is more drastic than HALT - it stops both CPU and PPU until a joypad interrupt occurs:</p>
+
+            <pre><code>int CPU::stop() {
+    stopped = true;
+    pc += 2; // STOP is 2 bytes: 0x10 0x00
+    return 4; // STOP takes 4 cycles
+}</code></pre>
+
+            <p>The main loop handles STOP wake conditions and prevents PPU updates:</p>
+
+            <pre><code>// Check for wake from STOP (joypad interrupt only)
+if(cpu.stopped && (if_reg & INT_JOYPAD)) {
+    cpu.stopped = false; // Wake from STOP
+}
+
+// Skip instruction execution while stopped
+if(cpu.halted || cpu.stopped) {
+    cycles = 4;
+} else {
+    cycles = step();
+}
+
+// PPU doesn't update while stopped
+if(!cpu.stopped) {
+    ppu.step(cycles, memory);
+}</code></pre>
+
+            <h3>The HALT Bug</h3>
+            <p>The Game Boy has a hardware bug in HALT: if IME (Interrupt Master Enable) is disabled and there's a pending interrupt, the CPU doesn't halt. Instead, it continues execution but fails to increment PC after the HALT instruction, causing the next instruction to be executed twice.</p>
+
+            <p>This emulator implements the HALT bug. When the bug triggers, a <code>halt_bug</code> flag is set instead of <code>halted</code>. In <code>execute_instruction</code>, the PC is saved before the fetch, and after decoding, if <code>halt_bug</code> is set the PC is reset to its pre-fetch value — causing the next byte to be fetched and executed again without advancing:</p>
+
+            <pre><code>uint16_t pc_before = pc;
+int cycles = [&amp;]() -&gt; int { switch (opcode) {
+    // ... all cases ...
+} }();
+if (halt_bug) {
+    pc = pc_before; // Re-execute from same address
+    halt_bug = false;
+}
+return cycles;</code></pre>
+
+            <h3>CGB Speed Switching</h3>
+            <p>On Game Boy Color, STOP can be used to switch between normal and double-speed mode when the KEY1 register (0xFF4D) bit 0 is set. This functionality is not implemented in this emulator as it focuses on original Game Boy compatibility.</p>
+        </section>
+
+        <section>
+            <h2>CB-Prefixed Instructions</h2>
+            <p>The 0xCB prefix indicates a two-byte instruction for bit manipulation. These instructions provide comprehensive bit-level operations. Prior to this branch, only SWAP and RES were implemented. This branch adds all remaining CB operations.</p>
+
+            <h3>Instruction Decoder</h3>
+            <p>The CB instruction set has a regular structure that allows for efficient decoding:</p>
+
+            <pre><code>int CPU::cb_execute_instruction(Memory& memory) {
+    uint8_t opcode = memory.read(pc + 1);
+    uint8_t reg_index = opcode & 0x07;  // Last 3 bits identify the register
+    
+    // Register lookup table (6 means (HL) indirect)
+    uint8_t* regs[] = {&amp;bc.high, &amp;bc.low, &amp;de.high, &amp;de.low, 
+                       &amp;hl.high, &amp;hl.low, nullptr, &amp;af.high};
+    
+    // Dispatch based on opcode ranges...
+}</code></pre>
+
+            <p>The lower 3 bits of the opcode identify which register to operate on:</p>
+            <ul>
+                <li>0 = B, 1 = C, 2 = D, 3 = E, 4 = H, 5 = L, 6 = (HL), 7 = A</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>CB Rotate and Shift Instructions</h2>
+
+            <h3>RLC r/(HL) - Rotate Left Circular (0xCB 0x00-0x07)</h3>
+            <p>Similar to RLCA but can operate on any register and sets the zero flag.</p>
+
+            <pre><code>int CPU::rlc_r(uint8_t& reg) {
+    bool msb = (reg & 0x80) != 0;
+    reg = (reg << 1) | (msb ? 1 : 0);
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, msb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>RRC r/(HL) - Rotate Right Circular (0xCB 0x08-0x0F)</h3>
+            <p>Rotates right, copying bit 0 to both bit 7 and carry.</p>
+
+            <pre><code>int CPU::rrc_r(uint8_t& reg) {
+    bool lsb = (reg & 0x01) != 0;
+    reg = (reg >> 1) | (lsb ? 0x80 : 0);
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>RL r/(HL) - Rotate Left Through Carry (0xCB 0x10-0x17)</h3>
+            <p>Rotates left with bit 7 going to carry and carry going to bit 0.</p>
+
+            <pre><code>int CPU::rl_r(uint8_t& reg) {
+    bool msb = (reg & 0x80) != 0;
+    reg = (reg << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, msb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>RR r/(HL) - Rotate Right Through Carry (0xCB 0x18-0x1F)</h3>
+            <p>Rotates right with bit 0 going to carry and carry going to bit 7.</p>
+
+            <pre><code>int CPU::rr_r(uint8_t& reg) {
+    bool lsb = (reg & 0x01) != 0;
+    reg = (reg >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>SLA r/(HL) - Shift Left Arithmetic (0xCB 0x20-0x27)</h3>
+            <p>Shifts left, inserting 0 into bit 0. Bit 7 goes to carry.</p>
+
+            <pre><code>int CPU::sla_r(uint8_t& reg) {
+    bool msb = (reg & 0x80) != 0;
+    reg <<= 1;
+    reg &= 0xFE; // Ensure bit 0 is 0
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, msb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>SRA r/(HL) - Shift Right Arithmetic (0xCB 0x28-0x2F)</h3>
+            <p>Shifts right, preserving bit 7 (sign bit). Bit 0 goes to carry.</p>
+
+            <pre><code>int CPU::sra_r(uint8_t& reg) {
+    bool msb = (reg & 0x80) != 0;
+    bool lsb = (reg & 0x01) != 0;
+    reg = (reg >> 1) | (msb ? 0x80 : 0); // Preserve sign bit
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>SRL r/(HL) - Shift Right Logical (0xCB 0x38-0x3F)</h3>
+            <p>Shifts right, inserting 0 into bit 7. Bit 0 goes to carry.</p>
+
+            <pre><code>int CPU::srl_r(uint8_t& reg) {
+    bool lsb = (reg & 0x01) != 0;
+    reg >>= 1; // Bit 7 becomes 0
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, lsb);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+        </section>
+
+        <section>
+            <h2>SWAP r/(HL) (0xCB 0x30-0x37)</h2>
+            <p>SWAP exchanges the upper and lower nibbles of a byte. This is unique to the Game Boy and is useful for BCD operations and sprite manipulation. <em>(Already implemented in previous iterations, included here for completeness.)</em></p>
+
+            <pre><code>int CPU::swap_r(uint8_t& reg) {
+    reg = (reg << 4) | (reg >> 4);
+
+    set_flag(af.low, FLAG_ZERO, reg == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <p><strong>Example:</strong> If B = 0x3F, after SWAP B: B = 0xF3</p>
+
+            <p>SWAP is particularly useful for graphics routines where you need to manipulate nibbles representing pixel data or color palettes.</p>
+        </section>
+
+        <section>
+            <h2>Bit Test, Reset, and Set</h2>
+
+            <h3>BIT b, r/(HL) (0xCB 0x40-0x7F)</h3>
+            <p>Tests if a specific bit is set. Sets the zero flag if the bit is 0. This is a new addition in this branch.</p>
+
+            <pre><code>int CPU::bit_r(uint8_t& reg, uint8_t bit) {
+    set_flag(af.low, FLAG_ZERO, !(reg & (1 << bit)));
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, true);
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <p>The half-carry flag is always set to 1 by BIT, and the subtract flag is always cleared. The carry flag is unchanged.</p>
+
+            <h3>RES b, r/(HL) (0xCB 0x80-0xBF)</h3>
+            <p>Resets (clears) a specific bit to 0. No flags are affected. <em>(This was already implemented in previous iterations.)</em></p>
+
+            <pre><code>int CPU::res(uint8_t bit, uint8_t& reg) {
+    reg &= ~(1 << bit);
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>SET b, r/(HL) (0xCB 0xC0-0xFF)</h3>
+            <p>Sets a specific bit to 1. No flags are affected. This is a new addition in this branch.</p>
+
+            <pre><code>int CPU::set(uint8_t bit, uint8_t& reg) {
+    reg |= (1 << bit);
+    pc += 2;
+    return 8;
+}</code></pre>
+
+            <h3>Decoding Bit Position</h3>
+            <p>For BIT, RES, and SET instructions, the bit position (0-7) is encoded in the opcode:</p>
+
+            <pre><code>// BIT instructions (0x40-0x7F): bit = (opcode - 0x40) / 8
+// RES instructions (0x80-0xBF): bit = (opcode - 0x80) / 8
+// SET instructions (0xC0-0xFF): bit = (opcode - 0xC0) / 8
+
+if (opcode >= 0x40 && opcode <= 0x7F) {
+    uint8_t bit = (opcode - 0x40) / 8;  // 0-7
+    if (reg_index == 6) return bit_mem_hl(memory, bit);
+    return bit_r(*regs[reg_index], bit);
+}</code></pre>
+
+            <p>This encoding allows for 8 bits × 8 registers = 64 opcodes per operation type.</p>
+        </section>
+
+        <section>
+            <h2>Memory Variants of CB Instructions</h2>
+            <p>All CB instructions except BIT have a (HL) variant that operates on memory. These take twice as long as register operations (16 vs 8 cycles) due to memory access.</p>
+
+            <p>Example - SWAP (HL):</p>
+
+            <pre><code>int CPU::swap_mem_hl(Memory& memory) {
+    uint8_t value = memory.read(hl.pair);
+    value = (value << 4) | (value >> 4);
+
+    set_flag(af.low, FLAG_ZERO, value == 0);
+    set_flag(af.low, FLAG_SUBTRACT, false);
+    set_flag(af.low, FLAG_HALF_CARRY, false);
+    set_flag(af.low, FLAG_CARRY, false);
+
+    memory.write(hl.pair, value);
+    pc += 2;
+    return 16; // Double cycles for memory access
+}</code></pre>
+
+            <p>The pattern is consistent across all CB instructions:</p>
+            <ul>
+                <li>Read from (HL)</li>
+                <li>Perform operation</li>
+                <li>Set flags (if applicable)</li>
+                <li>Write back to (HL)</li>
+                <li>16 cycles (except BIT, which is 12)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Illegal Opcodes</h2>
+            <p>The Game Boy CPU has 11 illegal/undefined opcodes that don't correspond to valid instructions. This branch explicitly marks them to return -1, which signals an error in the emulator:</p>
+
+            <pre><code>case 0xD3: return -1; // Illegal opcode
+case 0xDB: return -1; // Illegal opcode
+case 0xDD: return -1; // Illegal opcode
+case 0xE3: return -1; // Illegal opcode
+case 0xE4: return -1; // Illegal opcode
+case 0xEB: return -1; // Illegal opcode
+case 0xEC: return -1; // Illegal opcode
+case 0xED: return -1; // Illegal opcode
+case 0xF4: return -1; // Illegal opcode
+case 0xFC: return -1; // Illegal opcode
+case 0xFD: return -1; // Illegal opcode</code></pre>
+
+            <p>These opcodes should never appear in valid Game Boy programs. If encountered, they likely indicate corrupted ROM data or an emulator bug causing execution to jump to invalid code.</p>
+        </section>
+
+        <section>
+            <h2>Implementation Summary</h2>
+            <p>This branch completes the Game Boy's instruction set by adding the remaining opcodes that weren't covered in the initial Tetris-driven implementation:</p>
+
+            <table>
+                <tr><th>Category</th><th>Count</th><th>Opcodes</th></tr>
+                <tr><td>Accumulator rotates</td><td>4</td><td>0x07, 0x0F, 0x17, 0x1F</td></tr>
+                <tr><td>8-bit arithmetic</td><td>27</td><td>ADC (9), SUB (9), SBC (9)</td></tr>
+                <tr><td>Special</td><td>4</td><td>DAA, SCF, CCF, DEC (HL)</td></tr>
+                <tr><td>Control</td><td>2</td><td>HALT, STOP</td></tr>
+                <tr><td>CB-prefixed</td><td>~200</td><td>RLC, RRC, RL, RR, SLA, SRA, SRL, BIT, SET</td></tr>
+                <tr><td>Illegal opcodes</td><td>11</td><td>Marked to return -1</td></tr>
+            </table>
+
+            <p>Combined with the instructions from Parts 1 and 2 (LD variants, XOR, AND, OR, CP, ADD, jumps, calls, returns, PUSH/POP, RST, 16-bit ops, INC, SWAP, RES), the emulator now supports the complete Game Boy CPU instruction set.</p>
+        </section>
+
+        <section>
+            <h2>Testing and Validation</h2>
+            <p>To verify the implementation, you can use test ROMs like:</p>
+            <ul>
+                <li><strong>Blargg's CPU instruction tests</strong> - Comprehensive tests for all instructions. The individual test ROMs (01-special.gb, 02-interrupts.gb, etc.) fit within 32KB and run without MBC. The combined <code>cpu_instrs.gb</code> ROM exceeds 32KB and requires MBC1 support to run.</li>
+                <li><strong>dmg-acid2</strong> - Visual test for CPU timing and behavior</li>
+                <li><strong>Mooneye GB tests</strong> - Tests for edge cases and timing</li>
+            </ul>
+
+            <p>These test ROMs will help identify any subtle bugs in flag handling, cycle timing, or instruction behavior that might not be apparent when running commercial games.</p>
+        </section>
+
+        <section>
+            <h2>What's Next</h2>
+            <p>With the complete CPU instruction set now implemented, including functional HALT and STOP instructions, the emulator can execute any Game Boy program. The remaining areas for development are:</p>
+            <ol>
+                <li><strong>Memory Bank Controllers:</strong> MBC1, MBC3, MBC5 for larger ROMs</li>
+                <li><strong>Sound:</strong> Game Boy's 4-channel audio processor</li>
+                <li><strong>Game Boy Color Support:</strong> CGB-specific features like speed switching and extended palettes</li>
+            </ol>
+        </section>
+        </article>
+    </main>
+    <nav class="page-nav bottom">
+        <a href="input_and_rendering.html">← Input and Rendeding</a>
+        <a href="index.html">Index →</a>
+    </nav>
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>
