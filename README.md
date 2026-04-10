@@ -25,7 +25,8 @@ Detailed development documentation with step-by-step explanations is available i
   - Flag register management (Z, N, H, C)
   - Instruction execution with cycle-accurate timing
   - Frame-based execution loop (~59.7 Hz)
-  - Interrupt handling (VBlank, LCD STAT, Timer, Serial)
+  - Interrupt handling (VBlank, LCD STAT, Timer, Serial, Joypad)
+  - HALT bug (IME=0 with pending interrupt causes PC not to advance on next fetch)
 
 - **PPU (Picture Processing Unit)**
   - Background layer with scrolling (SCX/SCY registers)
@@ -404,7 +405,7 @@ The emulator successfully runs Tetris from title screen through full gameplay wi
 - ✅ Logical: XOR, OR, AND, BIT, RES, SET, RL, RLC, RR, RRC, SLA, SRA, SRL, SWAP
 - ✅ Interrupt control: DI, EI, RETI
 - ✅ Stack operations: PUSH, POP (all register pairs)
-- ✅ Miscellaneous: NOP, HALT, DAA, CPL, CCF, SCF, RLCA, RRCA, RLA, RRA
+- ✅ Miscellaneous: NOP, HALT (with HALT bug), DAA, CPL, CCF, SCF, RLCA, RRCA, RLA, RRA
 
 **Graphics/PPU:**
 - ✅ Background rendering with scrolling (SCX/SCY)
@@ -426,6 +427,8 @@ The emulator successfully runs Tetris from title screen through full gameplay wi
 
 **Input:**
 - ✅ Joypad register (0xFF00) implementation
+  - ✅ Joypad interrupt (INT_JOYPAD) on button press
+  - ✅ Wake from STOP on joypad interrupt
 - ✅ Keyboard control (Z/X/Arrows/Enter/Shift)
 - ✅ Gamepad support (Xbox/PlayStation/Nintendo Pro)
 - ✅ Controller hot-plugging

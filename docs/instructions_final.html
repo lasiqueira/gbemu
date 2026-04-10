@@ -316,11 +316,15 @@ DAA          ; A = 0x30 (BCD for 30), corrected!</code></pre>
             <h3>HALT (0x76)</h3>
             <p>HALT puts the CPU into a low-power state until an interrupt occurs. The implementation sets the halted flag, which the main execution loop checks:</p>
 
-            <pre><code>int CPU::halt() {
-    // NOTE: HALT bug not implemented
-    halted = true; // Set the CPU to halted state
-    pc += 1; // Move past the instruction
-    return 4; // HALT takes 4 cycles
+            <pre><code>int CPU::halt(Memory&amp; memory) {
+    uint8_t pending = memory.read(0xFF0F) &amp; memory.read(0xFFFF) &amp; 0x1F;
+    if (!ime &amp;&amp; pending) {
+        halt_bug = true; // HALT bug: next instruction fetch won't advance PC
+    } else {
+        halted = true; // Normal HALT: wait for interrupt
+    }
+    pc += 1;
+    return 4;
 }</code></pre>
 
             <h3>Main Loop Integration</h3>
@@ -375,7 +379,17 @@ if(!cpu.stopped) {
             <h3>The HALT Bug</h3>
             <p>The Game Boy has a hardware bug in HALT: if IME (Interrupt Master Enable) is disabled and there's a pending interrupt, the CPU doesn't halt. Instead, it continues execution but fails to increment PC after the HALT instruction, causing the next instruction to be executed twice.</p>
 
-            <p><strong>Note:</strong> The HALT bug is not currently implemented in this emulator. This bug exists in all original Game Boy models, but most games don't encounter it because they typically enable interrupts before using HALT. Implementing it would require tracking a <code>halt_bug</code> flag and modifying the instruction fetch logic.</p>
+            <p>This emulator implements the HALT bug. When the bug triggers, a <code>halt_bug</code> flag is set instead of <code>halted</code>. In <code>execute_instruction</code>, the PC is saved before the fetch, and after decoding, if <code>halt_bug</code> is set the PC is reset to its pre-fetch value — causing the next byte to be fetched and executed again without advancing:</p>
+
+            <pre><code>uint16_t pc_before = pc;
+int cycles = [&amp;]() -&gt; int { switch (opcode) {
+    // ... all cases ...
+} }();
+if (halt_bug) {
+    pc = pc_before; // Re-execute from same address
+    halt_bug = false;
+}
+return cycles;</code></pre>
 
             <h3>CGB Speed Switching</h3>
             <p>On Game Boy Color, STOP can be used to switch between normal and double-speed mode when the KEY1 register (0xFF4D) bit 0 is set. This functionality is not implemented in this emulator as it focuses on original Game Boy compatibility.</p>
@@ -664,7 +678,7 @@ case 0xFD: return -1; // Illegal opcode</code></pre>
             <h2>Testing and Validation</h2>
             <p>To verify the implementation, you can use test ROMs like:</p>
             <ul>
-                <li><strong>Blargg's CPU instruction tests</strong> - Comprehensive tests for all instructions</li>
+                <li><strong>Blargg's CPU instruction tests</strong> - Comprehensive tests for all instructions. The individual test ROMs (01-special.gb, 02-interrupts.gb, etc.) fit within 32KB and run without MBC. The combined <code>cpu_instrs.gb</code> ROM exceeds 32KB and requires MBC1 support to run.</li>
                 <li><strong>dmg-acid2</strong> - Visual test for CPU timing and behavior</li>
                 <li><strong>Mooneye GB tests</strong> - Tests for edge cases and timing</li>
             </ul>
@@ -676,16 +690,10 @@ case 0xFD: return -1; // Illegal opcode</code></pre>
             <h2>What's Next</h2>
             <p>With the complete CPU instruction set now implemented, including functional HALT and STOP instructions, the emulator can execute any Game Boy program. The remaining areas for development are:</p>
             <ol>
-                <li><strong>HALT Bug:</strong> Implement the edge case where HALT fails to halt when IME is disabled with a pending interrupt</li>
-                <li><strong>Interrupt System Enhancements:</strong> Ensure all 5 interrupt types have proper timing and priority handling</li>
-                <li><strong>Timer:</strong> Implementing the programmable timer for accurate timing</li>
+                <li><strong>Memory Bank Controllers:</strong> MBC1, MBC3, MBC5 for larger ROMs</li>
                 <li><strong>Sound:</strong> Game Boy's 4-channel audio processor</li>
-                <li><strong>Serial:</strong> Link cable communication (for games that use it)</li>
-                <li><strong>Accuracy Testing:</strong> Running test ROMs like Blargg's CPU tests and Mooneye GB tests</li>
                 <li><strong>Game Boy Color Support:</strong> CGB-specific features like speed switching and extended palettes</li>
             </ol>
-
-            <p>The instruction foundation is complete with working power-saving modes - the focus now shifts to peripherals, timing accuracy, and edge case handling to achieve high compatibility with the Game Boy software library.</p>
         </section>
         </article>
     </main>
@@ -694,7 +702,7 @@ case 0xFD: return -1; // Illegal opcode</code></pre>
         <a href="index.html">Index →</a>
     </nav>
     <footer>
-        <p>&copy; 2026 Game Boy Emulator Project. Built with C++ and passion.</p>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
     </footer>
 </body>
 </html>
