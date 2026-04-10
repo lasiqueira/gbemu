@@ -61,6 +61,7 @@ namespace cpu
         bool ime_scheduled; // Delayed IME enable (1 byte)
         bool stopped; // CPU stopped state (1 byte)
         bool halted; // CPU halted state (1 byte)
+        bool halt_bug; // HALT bug state (1 byte)
         
         CPU();
         
@@ -103,7 +104,7 @@ namespace cpu
         int rra();
         int scf();
         int ccf();
-        int halt();
+        int halt(Memory& memory);
         int adc_a(uint8_t value, int length = 1, int cycles = 4);
         int sub_a(uint8_t value, int length = 1, int cycles = 4);
         int sbc_a(uint8_t value, int length = 1, int cycles = 4);

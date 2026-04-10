@@ -20,6 +20,7 @@ namespace cpu
         ime_scheduled = false;
         stopped = false;
         halted = false;
+        halt_bug = false;
 #ifdef GBEMU_DEBUG
         instructions_executed = 0;
 #endif
@@ -527,9 +528,13 @@ namespace cpu
         return 4; // CCF takes 4 cycles
     }
 
-    int CPU::halt() {
-        // NOTE: HALT bug not implemented (when IME=0 and interrupt pending, PC should not increment on next fetch)
-        halted = true; // Set the CPU to halted state
+    int CPU::halt(Memory& memory) {
+        uint8_t pending = memory.read(0xFF0F) & memory.read(0xFFFF) & 0x1F;
+        if(!ime && pending) {
+            halt_bug = true; // Trigger HALT bug if IME is disabled and there's a pending interrupt
+        } else {
+            halted = true; // Set the CPU to halted state
+        }
         pc += 1; // Move past the instruction
         return 4; // HALT takes 4 cycles
     }
@@ -830,9 +835,9 @@ namespace cpu
             pc_history.pop_front();
         }
 #endif
-
+        uint16_t pc_before = pc;
         uint8_t opcode = memory.read(pc);
-        switch (opcode) {
+       int cycles = [&]() -> int { switch (opcode) {
             case 0x00: return nop(); // NOP
             case 0x01: return ld_rr_n16(bc.pair, memory.read_word(pc + 1)); // LD BC, n16
             case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
@@ -951,7 +956,7 @@ namespace cpu
             case 0x73: return ld_mem_n8(memory, hl.pair, de.low,  1, 8); // LD (HL), E
             case 0x74: return ld_mem_n8(memory, hl.pair, hl.high, 1, 8); // LD (HL), H
             case 0x75: return ld_mem_n8(memory, hl.pair, hl.low,  1, 8); // LD (HL), L
-            case 0x76: return halt(); // HALT
+            case 0x76: return halt(memory); // HALT
             case 0x77: return ld_mem_n8(memory, hl.pair, af.high, 1, 8); // LD (HL), A
             case 0x78: return ld_r_n8(af.high, bc.high, 1, 4); // LD A, B
             case 0x79: return ld_r_n8(af.high, bc.low, 1, 4);  // LD A, C
@@ -1096,7 +1101,12 @@ namespace cpu
             default:
                 unimplemented_instruction(opcode, memory.rom);
                 return -1; // Indicate error for unimplemented instruction
+        } }();
+        if(halt_bug) {
+            pc = pc_before; // Don't advance PC if halt bug is active
+            halt_bug = false; // Clear halt bug after it has taken effect
         }
+        return cycles;
     }
 
     int CPU::cb_execute_instruction(Memory& memory) {
