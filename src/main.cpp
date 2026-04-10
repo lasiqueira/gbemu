@@ -18,8 +18,9 @@ void handle_input(SDL_Event& event, GameBoy& gameboy)
         return;
     
     bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
+    uint8_t prev = gameboy.memory.joypad_state;
     uint8_t& joypad = gameboy.memory.joypad_state;
-    
+
     // Joypad state: bit 0 = pressed, 1 = released
     // Bits 0-3: A, B, Select, Start
     // Bits 4-7: Right, Left, Up, Down
@@ -51,6 +52,11 @@ void handle_input(SDL_Event& event, GameBoy& gameboy)
             if (pressed) joypad &= ~0x80; else joypad |= 0x80;
             break;
     }
+
+    // Raise joypad interrupt if any button transitioned to pressed (1->0)
+    if (prev & ~joypad) {
+        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
+    }
 }
 
 void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
@@ -59,8 +65,9 @@ void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
         return;
     
     bool pressed = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+    uint8_t prev = gameboy.memory.joypad_state;
     uint8_t& joypad = gameboy.memory.joypad_state;
-    
+
     // Map gamepad buttons to Game Boy buttons
     // Joypad state: bit 0 = pressed (active low)
     // Bits 0-3: A, B, Select, Start
@@ -91,6 +98,11 @@ void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
         case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
             if (pressed) joypad &= ~0x80; else joypad |= 0x80;
             break;
+    }
+
+    // Raise joypad interrupt if any button transitioned to pressed (1->0)
+    if (prev & ~joypad) {
+        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
 
