@@ -1,27 +1,28 @@
 #include "gameboy.h"
 
-GameBoy::GameBoy() : running(false) {
-    memory.write(IO_LY, 0); // Initialize LY register
-    memory.write(IO_IF, 0); // Initialize IF register (no interrupts pending)
-    
-    // Initialize joypad register (0xFF00) - bits 4-5 set (no keys selected), bits 0-3 set (no buttons pressed)
-    memory.write(0xFF00, 0x3F);
-    
-    // Initialize LCD registers to post-boot state (skipping boot ROM)
-    memory.write(0xFF40, 0x91); // LCDC: LCD on, BG on, BG tile data at 8800-97FF
-    memory.write(0xFF41, 0x00); // STAT: Mode 0
-    memory.write(0xFF42, 0x00); // SCY: Scroll Y = 0
-    memory.write(0xFF43, 0x00); // SCX: Scroll X = 0
-    memory.write(0xFF44, 0x00); // LY: Line = 0
-    memory.write(0xFF45, 0x00); // LYC: LY Compare = 0
-    memory.write(0xFF47, 0xFC); // BGP: Background palette (11 11 10 00)
-    memory.write(0xFF48, 0xFF); // OBP0: Object palette 0
-    memory.write(0xFF49, 0xFF); // OBP1: Object palette 1
-    memory.write(0xFF4A, 0x00); // WY: Window Y = 0
-    memory.write(0xFF4B, 0x00); // WX: Window X = 0
+void GameBoy::reset() {
+    memory = Memory{};
+    cpu = cpu::CPU{};
+    ppu = PPU{};
+
+    // Post-boot I/O register state (skipping boot ROM)
+    memory.write(IO_JOYPAD, 0x3F);
+    memory.write(IO_LCDC, 0x91); // LCD on, BG on
+    memory.write(IO_STAT, 0x00);
+    memory.write(IO_SCY, 0x00);
+    memory.write(IO_SCX, 0x00);
+    memory.write(IO_LY, 0x00);
+    memory.write(IO_LYC, 0x00);
+    memory.write(IO_BGP, 0xFC);  // Background palette (11 11 10 00)
+    memory.write(IO_OBP0, 0xFF);
+    memory.write(IO_OBP1, 0xFF);
+    memory.write(IO_WY, 0x00);
+    memory.write(IO_WX, 0x00);
+    memory.write(IO_IF, 0x00);
 }
 
 void GameBoy::load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path) {
+    reset();
     memory.load_rom(rom);
     memory.load_battery(rom_path); // Load battery RAM if applicable
 }

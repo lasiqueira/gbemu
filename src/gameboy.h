@@ -10,9 +10,10 @@ struct GameBoy {
     Memory memory;
     cpu::CPU cpu;
     PPU ppu;
-    bool running;
+    bool running = false;
     
-    GameBoy();
+    // Reset all state to post-boot defaults
+    void reset();
     
     void load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path);
     

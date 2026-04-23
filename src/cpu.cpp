@@ -15,15 +15,6 @@ namespace cpu
         bc.pair = 0x0013; // B=0x00, C=0x13
         de.pair = 0x00D8; // D=0x00, E=0xD8
         hl.pair = 0x014D; // H=0x01, L=0x4D
-        
-        ime = false;
-        ime_scheduled = false;
-        stopped = false;
-        halted = false;
-        halt_bug = false;
-#ifdef GBEMU_DEBUG
-        instructions_executed = 0;
-#endif
     }
     
     void CPU::print_state() {

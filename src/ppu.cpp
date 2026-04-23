@@ -2,12 +2,6 @@
 #include "memory.h"
 #include "constants.h"
 
-PPU::PPU() : mode(PPUMode::OAMSearch), mode_cycles(0), scanline(0), window_line_counter(0), visible_sprite_count(0), frame_ready(false)
-{
-    framebuffer.fill(0);
-    rgba_buffer.fill(0);
-}
-
 void PPU::step(int cycles, Memory& memory)
 {
     uint8_t lcdc = memory.read(IO_LCDC);

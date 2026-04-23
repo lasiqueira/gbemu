@@ -1,16 +1,6 @@
 #include "memory.h"
 #include "constants.h"
-#include <cstring>
 #include <cstdio>
-
-//TODO maybe initialize in the struct?
-Memory::Memory() : ie_register(0), joypad_state(0xFF), div_counter(0), tima_cycles(0) {
-    std::memset(vram, 0, sizeof(vram));
-    std::memset(wram, 0, sizeof(wram));
-    std::memset(oam, 0, sizeof(oam));
-    std::memset(io, 0, sizeof(io));
-    std::memset(hram, 0, sizeof(hram));
-}
 
 void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
     rom = rom_data;

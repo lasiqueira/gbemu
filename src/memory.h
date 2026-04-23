@@ -34,12 +34,12 @@ struct Memory {
     std::vector<uint8_t> ext_ram;
     
     // Internal Game Boy memory
-    uint8_t vram[0x2000];      // $8000-$9FFF: Video RAM
-    uint8_t wram[0x2000];      // $C000-$DFFF: Work RAM
-    uint8_t oam[0xA0];         // $FE00-$FE9F: Sprite Attribute Table
-    uint8_t io[0x80];          // $FF00-$FF7F: I/O Registers
-    uint8_t hram[0x7F];        // $FF80-$FFFE: High RAM
-    uint8_t ie_register;       // $FFFF: Interrupt Enable
+    uint8_t vram[0x2000]  = {}; // $8000-$9FFF: Video RAM
+    uint8_t wram[0x2000]  = {}; // $C000-$DFFF: Work RAM
+    uint8_t oam[0xA0]     = {}; // $FE00-$FE9F: Sprite Attribute Table
+    uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
+    uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
+    uint8_t ie_register   = 0;  // $FFFF: Interrupt Enable
     
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
@@ -47,13 +47,11 @@ struct Memory {
     bool has_rtc = false;
 
     // Joypad state
-    uint8_t joypad_state;      // Current button states (0 = pressed, 1 = released)
+    uint8_t joypad_state = 0xFF; // Current button states (0 = pressed, 1 = released)
 
     // Timer state
-    int div_counter;           // Internal 16-bit divider counter; DIV register = upper byte
-    int tima_cycles;           // Cycle accumulator for TIMA increments
-
-    Memory();
+    int div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
+    int tima_cycles = 0;  // Cycle accumulator for TIMA increments
 
     // Advance timer counters by the given number of CPU cycles
     void tick_timers(int cycles);

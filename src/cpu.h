@@ -45,7 +45,7 @@ namespace cpu
     struct CPU
     {
 #ifdef GBEMU_DEBUG
-        uint64_t instructions_executed; // Total instructions executed (8 bytes) - debug only
+        uint64_t instructions_executed = 0; // Total instructions executed (8 bytes) - debug only
         std::deque<uint16_t> pc_history; // History of recently executed PCs for debugging (stores last 10)
 
 #endif
@@ -56,14 +56,14 @@ namespace cpu
         RegisterPair hl; // Access as hl.high (H), hl.low (L), or hl.pair (HL)
         RegisterPair af; // Access as af.high (A), af.low (F), or af.pair (AF)
         
-        uint16_t sp; // Stack pointer
-        uint16_t pc; // Program counter
+        uint16_t sp = 0; // Stack pointer
+        uint16_t pc = 0; // Program counter
 
-        bool ime; // Interrupt Master Enable Flag (1 byte)
-        bool ime_scheduled; // Delayed IME enable (1 byte)
-        bool stopped; // CPU stopped state (1 byte)
-        bool halted; // CPU halted state (1 byte)
-        bool halt_bug; // HALT bug state (1 byte)
+        bool ime = false; // Interrupt Master Enable Flag
+        bool ime_scheduled = false; // Delayed IME enable
+        bool stopped = false; // CPU stopped state
+        bool halted = false; // CPU halted state
+        bool halt_bug = false; // HALT bug state
         
         CPU();
         
