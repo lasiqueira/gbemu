@@ -14,18 +14,17 @@ enum class MBCType
 
 struct MBC 
 {
-    MBCType type = MBCType::None;
-    // Shared registers
-    bool     ram_enabled = false;
+    MBCType  type = MBCType::None;
+    uint32_t rtc_cycles = 0;
     uint16_t rom_bank = 1;
     uint8_t  ram_bank = 0;
+    bool     ram_enabled = false;
     bool     banking_mode = false;
+    uint8_t  rtc[5]         = {};
+    uint8_t  rtc_latched[5] = {};
+    uint8_t  latch_reg      = 0xFF;
     
-    //MBC3 RTC
-    uint8_t rtc[5]         = {};
-    uint8_t rtc_latched[5] = {};
-    uint8_t latch_reg      = 0xFF;
-    
+    void tick_rtc(int cycles);
 };
 
 struct Memory {

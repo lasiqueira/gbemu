@@ -359,22 +359,55 @@ void Memory::tick_timers(int cycles) {
 
     // Update TIMA if timer is enabled (TAC bit 2)
     uint8_t tac = io[0x07]; // 0xFF07
-    if (!(tac & 0x04)) return;
+    if ((tac & 0x04)) {
 
-    // TIMA increment thresholds (CPU cycles per tick)
-    static const int tima_thresholds[4] = {1024, 16, 64, 256};
-    int threshold = tima_thresholds[tac & 0x03];
+        // TIMA increment thresholds (CPU cycles per tick)
+        static const int tima_thresholds[4] = {1024, 16, 64, 256};
+        int threshold = tima_thresholds[tac & 0x03];
 
-    tima_cycles += cycles;
-    while (tima_cycles >= threshold) {
-        tima_cycles -= threshold;
-        uint8_t tima = io[0x05]; // 0xFF05
-        tima++;
-        if (tima == 0) {
-            io[0x05] = io[0x06]; // Reset TIMA to TMA (0xFF06)
-            io[0x0F] |= 0x04;   // Request timer interrupt (IF bit 2)
-        } else {
-            io[0x05] = tima;
+        tima_cycles += cycles;
+        while (tima_cycles >= threshold) {
+            tima_cycles -= threshold;
+            uint8_t tima = io[0x05]; // 0xFF05
+            tima++;
+            if (tima == 0) {
+                io[0x05] = io[0x06]; // Reset TIMA to TMA (0xFF06)
+                io[0x0F] |= 0x04;   // Request timer interrupt (IF bit 2)
+            } else {
+                io[0x05] = tima;
+            }
+        }
+    }
+
+    mbc.tick_rtc(cycles);
+}
+
+void MBC::tick_rtc(int cycles) {
+    if(type == MBCType::MBC3) {
+        if(rtc[4] & 0x40) { // RTC halted
+            return;
+        }
+        rtc_cycles += cycles;
+        if(rtc_cycles >= 4194304) {
+            rtc_cycles -= 4194304;
+            //Increment rtc seconds
+            if(++rtc[0] == 60) {
+                rtc[0] = 0;
+                if(++rtc[1] == 60) {
+                    rtc[1] = 0;
+                    if(++rtc[2] == 24) {
+                        rtc[2] = 0;
+                        uint16_t day = rtc[3] | ((rtc[4] & 0x01) << 8);
+                        day++;
+                        if(day >= 512) {
+                            day = 0;
+                            rtc[4] |= 0x80; // Set day carry flag
+                        }
+                        rtc[3] = day & 0xFF;
+                        rtc[4] = (rtc[4] & 0xFE) | ((day >> 8) & 0x01); 
+                    }
+                }
+            }
         }
     }
 }
