@@ -66,6 +66,13 @@ Detailed development documentation with step-by-step explanations is available i
   - Work RAM (0xC000-0xDFFF)
   - I/O registers (0xFF00-0xFF7F)
   - High RAM (0xFF80-0xFFFE)
+  - Memory Bank Controllers (MBC1, MBC2, MBC3, MBC5)
+    - ROM banking (up to 512 banks / 8MB)
+    - External RAM banking with enable/disable
+    - MBC1 mode 0/1 (ROM/RAM banking modes)
+    - MBC2 built-in 512×4-bit RAM
+    - MBC3 RTC register latch
+    - MBC5 9-bit ROM bank number
 
 - **Complete Game Boy Instruction Disassembler**
   - All 256 standard opcodes (0x00-0xFF)
@@ -394,7 +401,7 @@ Addr  Instruction           Flags       Len  Cycles
 
 **Fully playable!**
 
-The emulator successfully runs Tetris from title screen through full gameplay with complete rendering, input, timers, and correct serial port behaviour.
+The emulator successfully runs Tetris and passes all 11 Blargg cpu_instrs tests. MBC1-MBC5 cartridge support enables larger ROMs.
 
 ### Implemented Features
 
@@ -433,11 +440,33 @@ The emulator successfully runs Tetris from title screen through full gameplay wi
 - ✅ Gamepad support (Xbox/PlayStation/Nintendo Pro)
 - ✅ Controller hot-plugging
 
+**Memory Bank Controllers:**
+- ✅ MBC1 with mode 0/1 (ROM/RAM banking)
+- ✅ MBC2 with built-in 512×4-bit RAM
+- ✅ MBC3 with RTC register latch and clock ticking
+- ✅ MBC5 with 9-bit ROM bank number
+- ✅ External RAM enable/disable
+- ✅ Cartridge header parsing (type, ROM size, RAM size)
+- ✅ Battery-backed save files (.sav) with RTC persistence
+
 **Documentation:**
 - ✅ Comprehensive HTML documentation covering all implemented systems
 - ✅ Step-by-step development log
 
 ### Test ROM Results
+
+**Blargg cpu_instrs — all tests pass:**
+- ✅ 01: special
+- ✅ 02: interrupts
+- ✅ 03: op sp,hl
+- ✅ 04: op r,imm
+- ✅ 05: op rp
+- ✅ 06: ld r,r
+- ✅ 07: jr,jp,call,ret,rst
+- ✅ 08: misc instrs
+- ✅ 09: op r,r
+- ✅ 10: bit ops
+- ✅ 11: op a,(hl)
 
 **Tetris — fully playable:**
 - ✅ Boots to title screen with full graphics
@@ -452,7 +481,6 @@ The emulator successfully runs Tetris from title screen through full gameplay wi
 ## Future Work
 
 - **Sound/APU emulation** (4 audio channels, wave patterns)
-- **Memory Bank Controllers** (MBC1, MBC3, MBC5 for larger ROMs)
 - **Save state functionality**
 - **Debugger interface** (memory viewer, breakpoints)
 - **Game Boy Color support**
