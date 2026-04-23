@@ -412,3 +412,32 @@ void MBC::tick_rtc(int cycles) {
     }
 }
 
+void Memory::save_battery(const std::string& rom_path) {
+    if (!has_battery || ext_ram.empty()) return;
+    std::string save_path = rom_path.find_last_of('.') != std::string::npos ? rom_path.substr(0, rom_path.find_last_of('.')) + ".sav" : rom_path + ".sav";
+    FILE* file = fopen(save_path.c_str(), "wb");
+    if (file) {
+        fwrite(ext_ram.data(), 1, ext_ram.size(), file);
+        if(has_rtc) {
+            fwrite(mbc.rtc, 1, 5, file);
+        }
+        fclose(file);  
+    }
+}
+
+void Memory::load_battery(const std::string& rom_path) {
+    if (!has_battery) return;
+    std::string save_path = rom_path.find_last_of('.') != std::string::npos ? rom_path.substr(0, rom_path.find_last_of('.')) + ".sav" : rom_path + ".sav";
+    FILE* file = fopen(save_path.c_str(), "rb");
+    if (file) {
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        fread(ext_ram.data(), 1, ext_ram.size(), file);
+        if (has_rtc && file_size >= (long)(ext_ram.size() + 5)) {
+            fread(mbc.rtc, 1, 5, file);
+        }
+
+        fclose(file);
+    }
+}

@@ -42,7 +42,7 @@ struct GameBoy {
     
     GameBoy();
     
-    void load_rom(const std::vector<uint8_t>& rom);
+    void load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path);
     
     // Execute one instruction, return cycles taken
     int step();

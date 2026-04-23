@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <vector>
 #include <cstring>
+#include <filesystem>
+#include <string>
 
 enum class MBCType 
     {
@@ -72,4 +74,8 @@ struct Memory {
     
     // Write 16-bit word (little-endian)
     void write_word(uint16_t addr, uint16_t value);
+
+    // Save and load battery-backed RAM (for cartridges with batteries)
+    void save_battery(const std::string& rom_path);
+    void load_battery(const std::string& rom_path);
 };

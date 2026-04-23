@@ -22,8 +22,9 @@ GameBoy::GameBoy() : running(false) {
     memory.write(0xFF4B, 0x00); // WX: Window X = 0
 }
 
-void GameBoy::load_rom(const std::vector<uint8_t>& rom) {
+void GameBoy::load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path) {
     memory.load_rom(rom);
+    memory.load_battery(rom_path); // Load battery RAM if applicable
 }
 
 int GameBoy::step() {

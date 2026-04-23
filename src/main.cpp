@@ -168,7 +168,7 @@ int main(int argc, char** argv)
     
     // Initialize Game Boy and load ROM
     GameBoy gameboy;
-    gameboy.load_rom(rom);
+    gameboy.load_rom(rom, rom_path);
     
     std::println("ROM loaded: {} bytes", rom.size());
     std::println("Starting emulation...");
@@ -489,6 +489,8 @@ int main(int argc, char** argv)
     }
     
     // Cleanup
+    gameboy.memory.save_battery(rom_path); // Save battery RAM if applicable
+
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
