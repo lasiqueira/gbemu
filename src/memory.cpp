@@ -1,5 +1,6 @@
 #include "memory.h"
-#include <print>
+#include "constants.h"
+#include <cstring>
 #include <cstdio>
 
 //TODO maybe initialize in the struct?
@@ -141,7 +142,7 @@ uint8_t Memory::read(uint16_t addr) const {
     // I/O Registers: $FF00-$FF7F
     if (addr < 0xFF80) {
         // Joypad register (0xFF00)
-        if (addr == 0xFF00) {
+        if (addr == IO_JOYPAD) {
             uint8_t joyp = io[0];
             uint8_t result = 0xC0; // Bits 6-7 always set
             
@@ -290,7 +291,7 @@ void Memory::write(uint16_t addr, uint8_t value) {
     // I/O Registers: $FF00-$FF7F
     if (addr < 0xFF80) {
         // Joypad register (0xFF00) - only bits 4-5 are writable
-        if (addr == 0xFF00) {
+        if (addr == IO_JOYPAD) {
             io[0] = (value & 0x30) | 0xC0; // Keep only bits 4-5, set bits 6-7
         }
         // Serial transfer control (0xFF02)
@@ -298,26 +299,26 @@ void Memory::write(uint16_t addr, uint8_t value) {
         // Only auto-complete when using internal clock (master mode, 0x81).
         // External clock (slave, 0x80) requires a real linked partner to clock the transfer;
         // without one it stalls forever — completing it would fake a second Game Boy.
-        else if (addr == 0xFF02) {
+        else if (addr == IO_SC) {
             io[0x02] = value;
             if ((value & 0x81) == 0x81) { // Transfer start + internal clock
                 char c = static_cast<char>(io[0x01]);
                 putchar(c);
                 fflush(stdout);
                 io[0x02] &= ~0x80;  // Clear transfer-start bit (transfer complete)
-                io[0x0F] |= 0x08;   // Request serial interrupt (IF bit 3)
+                io[0x0F] |= INT_SERIAL;   // Request serial interrupt
             }
         }
         // DIV register (0xFF04): any write resets the internal counter
-        else if (addr == 0xFF04) {
+        else if (addr == IO_DIV) {
             div_counter = 0;
             io[0x04] = 0;
         }
-        else if (addr == 0xFF40) {
+        else if (addr == IO_LCDC) {
             io[0x40] = value;
         }
         // DMA transfer (0xFF46) - OAM DMA
-        else if (addr == 0xFF46) {
+        else if (addr == IO_DMA) {
             // DMA copies 160 bytes from XX00-XX9F to FE00-FE9F
             uint16_t source = value * 0x100;
             for (int i = 0; i < 0xA0; i++) {
@@ -358,7 +359,7 @@ void Memory::tick_timers(int cycles) {
     io[0x04] = static_cast<uint8_t>(div_counter >> 8);
 
     // Update TIMA if timer is enabled (TAC bit 2)
-    uint8_t tac = io[0x07]; // 0xFF07
+    uint8_t tac = io[0x07];
     if ((tac & 0x04)) {
 
         // TIMA increment thresholds (CPU cycles per tick)
@@ -368,11 +369,11 @@ void Memory::tick_timers(int cycles) {
         tima_cycles += cycles;
         while (tima_cycles >= threshold) {
             tima_cycles -= threshold;
-            uint8_t tima = io[0x05]; // 0xFF05
+            uint8_t tima = io[0x05];
             tima++;
             if (tima == 0) {
-                io[0x05] = io[0x06]; // Reset TIMA to TMA (0xFF06)
-                io[0x0F] |= 0x04;   // Request timer interrupt (IF bit 2)
+                io[0x05] = io[0x06]; // Reset TIMA to TMA
+                io[0x0F] |= INT_TIMER;   // Request timer interrupt
             } else {
                 io[0x05] = tima;
             }

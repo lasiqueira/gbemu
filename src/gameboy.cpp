@@ -1,5 +1,4 @@
 #include "gameboy.h"
-#include <print>
 
 GameBoy::GameBoy() : running(false) {
     memory.write(IO_LY, 0); // Initialize LY register

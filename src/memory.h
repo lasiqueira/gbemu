@@ -1,8 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-#include <cstring>
-#include <filesystem>
 #include <string>
 
 enum class MBCType 

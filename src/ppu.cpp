@@ -1,23 +1,6 @@
 #include "ppu.h"
 #include "memory.h"
-#include "gameboy.h"
-#include <cstring>
-#include <print>
-
-// PPU I/O Register addresses
-constexpr uint16_t LCDC = 0xFF40; // LCD Control
-constexpr uint16_t STAT = 0xFF41; // LCD Status
-constexpr uint16_t SCY = 0xFF42;  // Scroll Y
-constexpr uint16_t SCX = 0xFF43;  // Scroll X
-constexpr uint16_t LY = 0xFF44;   // LCD Y-Coordinate
-constexpr uint16_t LYC = 0xFF45;  // LY Compare
-constexpr uint16_t BGP = 0xFF47;  // BG Palette Data
-constexpr uint16_t OBP0 = 0xFF48; // Object Palette 0 Data
-constexpr uint16_t OBP1 = 0xFF49; // Object Palette 1 Data
-constexpr uint16_t WY = 0xFF4A;   // Window Y Position
-constexpr uint16_t WX = 0xFF4B;   // Window X Position
-constexpr uint16_t OAM_BASE = 0xFE00; // Base address of OAM (Object Attribute Memory)
-
+#include "constants.h"
 
 PPU::PPU() : mode(PPUMode::OAMSearch), mode_cycles(0), scanline(0), window_line_counter(0), visible_sprite_count(0), frame_ready(false)
 {
@@ -27,7 +10,7 @@ PPU::PPU() : mode(PPUMode::OAMSearch), mode_cycles(0), scanline(0), window_line_
 
 void PPU::step(int cycles, Memory& memory)
 {
-    uint8_t lcdc = memory.read(LCDC);
+    uint8_t lcdc = memory.read(IO_LCDC);
     
     // If LCD is disabled, reset PPU state and output white screen
     if (!(lcdc & LCDC_ENABLE))
@@ -36,7 +19,7 @@ void PPU::step(int cycles, Memory& memory)
         mode_cycles = 0;
         scanline = 0;
         window_line_counter = 0;
-        memory.write(LY, 0);
+        memory.write(IO_LY, 0);
         
         // Fill framebuffer with white (color 0 = lightest)
         framebuffer.fill(0);
@@ -72,11 +55,11 @@ void PPU::step(int cycles, Memory& memory)
             {
                 mode_cycles -= MODE_0_CYCLES;
                 scanline++;
-                memory.write(LY, scanline);
+                memory.write(IO_LY, scanline);
                 
-                // Check LYC=LY coincidence
-                uint8_t lyc = memory.read(LYC);
-                uint8_t stat = memory.read(STAT);
+                // Check IO_LYC=IO_LY coincidence
+                uint8_t lyc = memory.read(IO_LYC);
+                uint8_t stat = memory.read(IO_STAT);
                 if (scanline == lyc)
                 {
                     stat |= STAT_LYC_FLAG;
@@ -89,7 +72,7 @@ void PPU::step(int cycles, Memory& memory)
                 {
                     stat &= ~STAT_LYC_FLAG;
                 }
-                memory.write(STAT, stat);
+                memory.write(IO_STAT, stat);
                 
                 if (scanline >= SCREEN_HEIGHT)
                 {
@@ -111,11 +94,11 @@ void PPU::step(int cycles, Memory& memory)
             {
                 mode_cycles -= SCANLINE_CYCLES;
                 scanline++;
-                memory.write(LY, scanline);
+                memory.write(IO_LY, scanline);
                 
-                // Check LYC=LY coincidence
-                uint8_t lyc = memory.read(LYC);
-                uint8_t stat = memory.read(STAT);
+                // Check IO_LYC=IO_LY coincidence
+                uint8_t lyc = memory.read(IO_LYC);
+                uint8_t stat = memory.read(IO_STAT);
                 if (scanline == lyc)
                 {
                     stat |= STAT_LYC_FLAG;
@@ -128,14 +111,14 @@ void PPU::step(int cycles, Memory& memory)
                 {
                     stat &= ~STAT_LYC_FLAG;
                 }
-                memory.write(STAT, stat);
+                memory.write(IO_STAT, stat);
                 
                 if (scanline > 153)
                 {
                     // Start new frame
                     scanline = 0;
                     window_line_counter = 0;
-                    memory.write(LY, scanline);
+                    memory.write(IO_LY, scanline);
                     set_mode(PPUMode::OAMSearch, memory);
                 }
             }
@@ -145,7 +128,7 @@ void PPU::step(int cycles, Memory& memory)
 
 void PPU::render_scanline(Memory& memory)
 {
-    uint8_t lcdc = memory.read(LCDC);
+    uint8_t lcdc = memory.read(IO_LCDC);
     
     bool background_enabled = lcdc & LCDC_BG_ENABLE;
     bool window_enabled = lcdc & LCDC_WINDOW_ENABLE;
@@ -159,13 +142,13 @@ void PPU::render_scanline(Memory& memory)
         return;
     }
     
-    uint8_t scy = memory.read(SCY);
-    uint8_t scx = memory.read(SCX);
+    uint8_t scy = memory.read(IO_SCY);
+    uint8_t scx = memory.read(IO_SCX);
     // Background
-    uint8_t bgp = memory.read(BGP);
+    uint8_t bgp = memory.read(IO_BGP);
     // Window 
-    uint8_t wy = memory.read(WY);
-    uint8_t wx = memory.read(WX);
+    uint8_t wy = memory.read(IO_WY);
+    uint8_t wx = memory.read(IO_WX);
 
     bool window_visible_this_line = window_enabled && (scanline >= wy);
 
@@ -284,11 +267,11 @@ void PPU::set_mode(PPUMode new_mode, Memory& memory)
 {
     mode = new_mode;
     
-    uint8_t stat = memory.read(STAT);
+    uint8_t stat = memory.read(IO_STAT);
     stat = (stat & ~STAT_MODE_MASK) | static_cast<uint8_t>(new_mode);
-    memory.write(STAT, stat);
+    memory.write(IO_STAT, stat);
     
-    // Request STAT interrupt if enabled
+    // Request IO_STAT interrupt if enabled
     bool request_stat_int = false;
     switch (new_mode)
     {
@@ -360,7 +343,7 @@ void PPU::scan_oam(Memory& memory)
 {
     visible_sprite_count = 0;
 
-    uint8_t lcdc = memory.read(LCDC);
+    uint8_t lcdc = memory.read(IO_LCDC);
 
     // If sprites are disabled, skip scanning OAM
     if(!(lcdc & LCDC_OBJ_ENABLE))
@@ -413,8 +396,8 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     int pixel_x = screen_x - sprite_left;
     int pixel_y = scanline - (sprite.y - 16);
 
-    // Determine sprite height from LCDC
-    uint8_t lcdc = memory.read(LCDC);
+    // Determine sprite height from IO_LCDC
+    uint8_t lcdc = memory.read(IO_LCDC);
     int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
 
     // Handle Y flip
@@ -464,7 +447,7 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     }
 
     // Apply palette
-    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read(OBP1) : memory.read(OBP0);
+    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read(IO_OBP1) : memory.read(IO_OBP0);
 
     uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
 

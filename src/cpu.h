@@ -1,7 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <vector>
+#ifdef GBEMU_DEBUG
 #include <deque>
+#endif
 
 // Debug flag - can be defined via CMake with -DGBEMU_DEBUG=ON
 // Or uncomment the line below to always enable it:
