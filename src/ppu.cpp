@@ -1,6 +1,7 @@
 #include "ppu.h"
 #include "memory.h"
 #include "constants.h"
+#include <algorithm>
 
 void PPU::step(int cycles, Memory& memory)
 {
@@ -373,6 +374,13 @@ void PPU::scan_oam(Memory& memory)
             }
         }
     }
+
+    // DMG priority: lower X wins; ties broken by lower OAM index (already in order)
+    std::sort(visible_sprites.begin(), visible_sprites.begin() + visible_sprite_count,
+        [](const Sprite& a, const Sprite& b) {
+            if(a.x != b.x) return a.x < b.x;
+            return a.oam_index < b.oam_index;
+        });
 }
 
 int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
