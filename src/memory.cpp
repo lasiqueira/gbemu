@@ -68,12 +68,24 @@ void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
 }
 
 uint8_t Memory::read(uint16_t addr) const {
-    // ROM: $0000-$7FFF (32KB for simple games like Tetris)
-    if (addr < 0x8000) {
-        if (addr < rom.size()) {
-            return rom[addr];
+    if(addr < 0x4000) {
+        if(mbc.type == MBCType::MBC1 && mbc.banking_mode) {
+            uint32_t bank = (mbc.ram_bank << 5) % num_rom_banks;
+            return rom[bank * 0x4000 + addr];
         }
-        return 0xFF; // Return 0xFF for unmapped ROM
+        return rom[addr];
+    }
+
+    if(addr < 0x8000) {
+        uint32_t bank;
+        
+        if(mbc.type == MBCType::MBC1) {
+            bank = ((mbc.ram_bank << 5) | mbc.rom_bank) % num_rom_banks;
+        } else {
+            bank = mbc.rom_bank % num_rom_banks;
+        }
+
+        return rom[bank * 0x4000 + (addr - 0x4000)];
     }
     
     // VRAM: $8000-$9FFF
@@ -81,9 +93,29 @@ uint8_t Memory::read(uint16_t addr) const {
         return vram[addr - 0x8000];
     }
     
-    // External RAM: $A000-$BFFF (not used in Tetris)
+    // External RAM: $A000-$BFFF
     if (addr < 0xC000) {
-        return 0xFF; // No external RAM for now
+        if(!mbc.ram_enabled) return 0xFF;
+        
+        if(mbc.type == MBCType::MBC2) {
+            return ext_ram[addr & 0x1FF] | 0xF0; // upper 4 bits undefined, return as 1s
+        }
+
+        if(mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08) {
+            if(has_rtc) {
+                return mbc.rtc_latched[mbc.ram_bank - 0x08];
+            }
+
+            return 0xFF;
+        }
+
+        if(!ext_ram.empty()) {
+            uint8_t bank = (mbc.type == MBCType::MBC1 && !mbc.banking_mode) ? 0 : mbc.ram_bank;
+            uint32_t offset = bank * 0x2000 + (addr - 0xA000);
+            return ext_ram[offset % ext_ram.size()];
+        }
+
+        return 0xFF;
     }
     
     // Work RAM: $C000-$DFFF
@@ -225,7 +257,8 @@ void Memory::write(uint16_t addr, uint8_t value) {
         } else if (mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08 && has_rtc) {
             mbc.rtc[mbc.ram_bank - 0x08] = value;
         } else if (!ext_ram.empty()) {
-            uint32_t offset = mbc.ram_bank * 0x2000 + (addr - 0xA000);
+            uint8_t bank = (mbc.type == MBCType::MBC1 && !mbc.banking_mode) ? 0 : mbc.ram_bank;
+            uint32_t offset = bank * 0x2000 + (addr - 0xA000);
             ext_ram[offset % ext_ram.size()] = value; 
         }
         return; 

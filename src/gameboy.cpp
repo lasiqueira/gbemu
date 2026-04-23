@@ -48,8 +48,8 @@ int GameBoy::step_frame() {
             cpu.halted = false; // Wake from HALT
         }
 
-        if(cpu.stopped && (if_reg & INT_JOYPAD)) {
-            cpu.stopped = false; // Wake from STOP
+        if(cpu.stopped && pending) {
+            cpu.stopped = false; // Wake from STOP on any interrupt
         }
 
         int cycles;
@@ -67,7 +67,7 @@ int GameBoy::step_frame() {
         cycles_executed += cycles;
 
         // Update PPU and timers
-        if(!cpu.stopped) {
+        if (!cpu.stopped) {
             ppu.step(cycles, memory);
         }
         memory.tick_timers(cycles);

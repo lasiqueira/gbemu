@@ -783,9 +783,11 @@ namespace cpu
     }
 
     int CPU::stop() {
-        stopped = true;
-        pc += 2; // Move past the instruction (STOP is 2 bytes)
-        return 4; // STOP takes 4 cycles
+        // On DMG, STOP halts the CPU until a button press, but no software
+        // intentionally uses it except for CGB speed switching.
+        // stopped = true;
+        pc += 2; // STOP is 2 bytes: 0x10 0x00
+        return 4;
     }
 
     int CPU::ld_mem_sp(Memory& memory, uint16_t addr) {
