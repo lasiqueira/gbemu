@@ -25,6 +25,10 @@ struct MBC
     uint8_t  latch_reg      = 0xFF;
     
     void tick_rtc(int cycles);
+
+    // Advance the RTC by the given number of real-world seconds (used on load to
+    // account for time that passed while the emulator was closed).
+    void advance_rtc(int64_t seconds);
 };
 
 struct Memory {
