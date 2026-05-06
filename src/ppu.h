@@ -79,23 +79,20 @@ constexpr Color GB_PALETTE[4] = {
 struct PPU
 {
     // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
-    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT> framebuffer;
+    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT> framebuffer = {};
     
     // RGBA framebuffer for rendering (4 bytes per pixel)
-    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT * 4> rgba_buffer;
+    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT * 4> rgba_buffer = {};
 
-    std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites; // Sprites visible on the current scanline
-   
+    std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
+
+    PPUMode mode = PPUMode::OAMSearch;
+    int mode_cycles = 0;         // Cycles spent in current mode
+    int scanline = 0;            // Current scanline (0-153)
+    int window_line_counter = 0; // Track which window line to draw
+    int visible_sprite_count = 0; // Number of sprites visible on the current scanline
     
-    PPUMode mode;
-    int mode_cycles;      // Cycles spent in current mode
-    int scanline;         // Current scanline (0-153)
-    int window_line_counter; //Track which window line to draw
-    int visible_sprite_count; // Number of sprites visible on the current scanline
-    
-    bool frame_ready;     // True when a frame is complete and ready to display
-    
-    PPU();
+    bool frame_ready = false;    // True when a frame is complete and ready to display
     
     // Update PPU state for the given number of cycles
     void step(int cycles, Memory& memory);

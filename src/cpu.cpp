@@ -15,15 +15,6 @@ namespace cpu
         bc.pair = 0x0013; // B=0x00, C=0x13
         de.pair = 0x00D8; // D=0x00, E=0xD8
         hl.pair = 0x014D; // H=0x01, L=0x4D
-        
-        ime = false;
-        ime_scheduled = false;
-        stopped = false;
-        halted = false;
-        halt_bug = false;
-#ifdef GBEMU_DEBUG
-        instructions_executed = 0;
-#endif
     }
     
     void CPU::print_state() {
@@ -783,9 +774,11 @@ namespace cpu
     }
 
     int CPU::stop() {
-        stopped = true;
-        pc += 2; // Move past the instruction (STOP is 2 bytes)
-        return 4; // STOP takes 4 cycles
+        // On DMG, STOP halts the CPU until a button press, but no software
+        // intentionally uses it except for CGB speed switching.
+        // stopped = true;
+        pc += 2; // STOP is 2 bytes: 0x10 0x00
+        return 4;
     }
 
     int CPU::ld_mem_sp(Memory& memory, uint16_t addr) {

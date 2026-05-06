@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Bank Controllers - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="instructions_final.html">← Final Instructions Implementation</a>
+        <span class="current">Memory Bank Controllers</span>
+        <a href="index.html">Index →</a>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>Memory Bank Controllers</h2>
+        <p><em>Extending the emulator beyond 32KB to run real-world Game Boy games</em></p>
+
+        <section>
+            <h2>Why MBCs Are Needed</h2>
+            <p>Up to this point, the emulator could successfully run games like Tetris because Tetris fits entirely within 32KB — the maximum ROM space the Game Boy CPU can directly address. The Game Boy's memory map dedicates addresses <code>$0000–$7FFF</code> to ROM: the first 16KB (<code>$0000–$3FFF</code>) are permanently mapped to ROM bank 0, and the second 16KB (<code>$4000–$7FFF</code>) are available for a switchable ROM bank. With no switching logic, that upper window always reads from physical ROM addresses <code>$4000–$7FFF</code> — perfectly sufficient for a 32KB cartridge.</p>
+
+            <p>Most commercial games exceed 32KB. Pokémon Blue, for example, is 512KB — sixteen times larger. There is simply no way to map that much data into 32KB of address space at once. The solution used by Nintendo and third-party developers was to put an extra chip on the cartridge itself: the <strong>Memory Bank Controller (MBC)</strong>. This chip intercepts writes to the ROM area (which would otherwise be ignored on a read-only chip) and uses them as control registers, swapping different physical ROM banks into the CPU's view of <code>$4000–$7FFF</code> on demand.</p>
+
+            <p>Without MBC support, any attempt to run these larger games results in the emulator looping endlessly or crashing, because the bank-switching writes are silently ignored and the game never sees the code it expects to find in the upper window.</p>
+        </section>
+
+        <section>
+            <h2>Cartridge Header Detection</h2>
+            <p>Every Game Boy cartridge stores metadata in a fixed header at <code>$0100–$014F</code>. Three bytes are particularly important for the emulator:</p>
+
+            <ul>
+                <li><strong>$0147 — Cartridge Type:</strong> identifies which MBC chip (if any) is present, and whether the cartridge includes RAM, a battery, or an RTC.</li>
+                <li><strong>$0148 — ROM Size:</strong> encodes the number of 16KB ROM banks as a power of two. Value <code>0x00</code> means 2 banks (32KB), <code>0x01</code> means 4 banks (64KB), <code>0x05</code> means 64 banks (1MB), and so on.</li>
+                <li><strong>$0149 — RAM Size:</strong> encodes the number of 8KB external RAM banks.</li>
+            </ul>
+
+            <p>On startup, <code>load_rom()</code> reads these bytes and configures the MBC state accordingly:</p>
+
+            <pre><code>uint8_t cart_type = rom[ROM_HEADER_CART_TYPE];
+uint8_t rom_size  = rom[ROM_HEADER_ROM_SIZE];
+uint8_t ram_size  = rom[ROM_HEADER_RAM_SIZE];
+
+switch (cart_type) {
+    case 0x00: mbc.type = MBCType::None; break;           // ROM ONLY
+    case 0x01: mbc.type = MBCType::MBC1; break;           // MBC1
+    case 0x03: mbc.type = MBCType::MBC1; has_battery = true; break; // MBC1+RAM+BATTERY
+    case 0x0F: mbc.type = MBCType::MBC3; has_rtc = true; has_battery = true; break;
+    case 0x13: mbc.type = MBCType::MBC3; has_battery = true; break; // MBC3+RAM+BATTERY
+    case 0x19: mbc.type = MBCType::MBC5; break;           // MBC5
+    // ...
+}
+
+num_rom_banks = 2 &lt;&lt; rom_size; // 0 → 2 banks, 1 → 4 banks, 2 → 8 banks, …
+</code></pre>
+
+            <p>The computed <code>num_rom_banks</code> is used as a modulus whenever a bank number is applied, so out-of-range writes wrap correctly and never read past the end of the ROM buffer.</p>
+        </section>
+
+        <section>
+            <h2>MBC1</h2>
+            <p>MBC1 was the first memory bank controller Nintendo produced and is found on hundreds of early Game Boy titles. It supports up to 2MB of ROM (128 banks) and up to 32KB of external RAM (4 banks).</p>
+
+            <h3>Register Map</h3>
+            <p>MBC1 exposes four write-only registers, each mapped to a region of the normally read-only ROM area:</p>
+
+            <table>
+                <tr><th>Address range</th><th>Function</th></tr>
+                <tr><td>$0000–$1FFF</td><td>RAM enable — write <code>0x0A</code> in the lower nibble to enable external RAM, any other value to disable</td></tr>
+                <tr><td>$2000–$3FFF</td><td>ROM bank number (lower 5 bits). Writing <code>0</code> is automatically promoted to <code>1</code></td></tr>
+                <tr><td>$4000–$5FFF</td><td>RAM bank number / upper 2 bits of ROM bank number (2 bits)</td></tr>
+                <tr><td>$6000–$7FFF</td><td>Banking mode: <code>0</code> = ROM banking (large ROM / small RAM), <code>1</code> = RAM banking (small ROM / large RAM)</td></tr>
+            </table>
+
+            <h3>Banking Mode</h3>
+            <p>The two-bit value written to <code>$4000–$5FFF</code> plays a dual role depending on the active mode:</p>
+            <ul>
+                <li><strong>ROM banking mode (default):</strong> the bits form the upper 2 bits of the ROM bank number, giving a full 7-bit bank address (up to 128 banks / 2MB). External RAM is locked to bank 0.</li>
+                <li><strong>RAM banking mode:</strong> the bits select which 8KB RAM bank is mapped to <code>$A000–$BFFF</code>. The ROM bank upper bits are forced to 0, limiting ROM to the first 512KB.</li>
+            </ul>
+
+            <p>In ROM banking mode the bank 0 area (<code>$0000–$3FFF</code>) can also be remapped. When the upper 2 bits are non-zero, ROM bank 0 maps to the first bank of the selected 512KB section instead of the very first bank:</p>
+
+            <pre><code>uint8_t Memory::read(uint16_t addr) const {
+    // Bank 0 area — remapped in MBC1 RAM banking mode
+    if (addr &lt; ADDR_ROM_BANK0_END) {
+        if (mbc.type == MBCType::MBC1 &amp;&amp; mbc.banking_mode) {
+            uint32_t bank = (mbc.ram_bank &lt;&lt; 5) % num_rom_banks;
+            return rom[bank * ROM_BANK_SIZE + addr];
+        }
+        return rom[addr]; // Fixed bank 0
+    }
+
+    // Switchable bank area
+    if (addr &lt; ADDR_VRAM_START) {
+        uint32_t bank;
+        if (mbc.type == MBCType::MBC1) {
+            bank = ((mbc.ram_bank &lt;&lt; 5) | mbc.rom_bank) % num_rom_banks;
+        } else {
+            bank = mbc.rom_bank % num_rom_banks;
+        }
+        return rom[bank * ROM_BANK_SIZE + (addr - ADDR_ROM_BANK0_END)];
+    }
+    // ...
+}</code></pre>
+
+            <h3>Register Writes</h3>
+            <pre><code>// $2000–$3FFF: ROM bank (lower 5 bits)
+case MBCType::MBC1:
+    mbc.rom_bank = value &amp; 0x1F;
+    if (mbc.rom_bank == 0) mbc.rom_bank = 1; // bank 0 not selectable here
+    break;
+
+// $4000–$5FFF: upper bits / RAM bank
+case MBCType::MBC1: mbc.ram_bank = value &amp; 0x03; break;
+
+// $6000–$7FFF: banking mode
+case MBCType::MBC1: mbc.banking_mode = value &amp; 0x01; break;
+</code></pre>
+        </section>
+
+        <section>
+            <h2>MBC2</h2>
+            <p>MBC2 is a simpler variant found on a small number of early titles. Its key differences from MBC1 are:</p>
+            <ul>
+                <li>Only 16 ROM banks (256KB maximum).</li>
+                <li>Built-in 512×4-bit RAM — half-byte (nibble) values only; the upper 4 bits of each byte always read back as <code>1</code>.</li>
+                <li>The RAM enable and ROM bank registers share the address range <code>$0000–$3FFF</code>. Bit 8 of the write address distinguishes them: if bit 8 is <strong>clear</strong>, the write targets RAM enable; if bit 8 is <strong>set</strong>, it selects the ROM bank (lower 4 bits).</li>
+            </ul>
+
+            <pre><code>// RAM enable ($0000–$1FFF, bit 8 must be clear)
+if (addr &lt; MBC_RAM_ENABLE_END) {
+    if (mbc.type == MBCType::MBC2 &amp;&amp; (addr &amp; 0x100)) return; // bit 8 set = ROM bank select area
+    mbc.ram_enabled = (value &amp; 0x0F) == 0x0A;
+    return;
+}
+
+// ROM bank ($2000–$3FFF, bit 8 must be set for MBC2)
+case MBCType::MBC2:
+    if (addr &amp; 0x100) {
+        mbc.rom_bank = value &amp; 0x0F;
+        if (mbc.rom_bank == 0) mbc.rom_bank = 1;
+    }
+    break;
+</code></pre>
+
+            <p>RAM reads and writes mask the address to 9 bits (<code>addr &amp; MBC2_RAM_MASK</code>) to stay within the 512-byte space, and reads OR the result with <code>0xF0</code> to present undefined upper nibbles as ones.</p>
+        </section>
+
+        <section>
+            <h2>MBC3</h2>
+            <p>MBC3 extends MBC1's design with a 7-bit ROM bank number (no more skipped banks at 0x20/0x40/0x60) and an optional real-time clock. It is used by Pokémon Red, Blue, Gold, Silver, and Crystal, among others.</p>
+
+            <h3>ROM Banking</h3>
+            <p>Writing to <code>$2000–$3FFF</code> sets all 7 bits of the ROM bank number in one write, enabling up to 128 banks (2MB) without the awkward two-register scheme of MBC1:</p>
+
+            <pre><code>case MBCType::MBC3:
+    mbc.rom_bank = value &amp; 0x7F;
+    if (mbc.rom_bank == 0) mbc.rom_bank = 1;
+    break;
+</code></pre>
+
+            <h3>RAM Bank and RTC Register Select</h3>
+            <p>Writes to <code>$4000–$5FFF</code> select either an external RAM bank (values <code>0x00–0x03</code>) or one of five RTC registers (values <code>0x08–0x0C</code>). The same address window at <code>$A000–$BFFF</code> then reads or writes the selected target:</p>
+
+            <table>
+                <tr><th>Value written</th><th>Selected target</th></tr>
+                <tr><td>0x00–0x03</td><td>External RAM bank 0–3</td></tr>
+                <tr><td>0x08</td><td>RTC S — seconds (0–59)</td></tr>
+                <tr><td>0x09</td><td>RTC M — minutes (0–59)</td></tr>
+                <tr><td>0x0A</td><td>RTC H — hours (0–23)</td></tr>
+                <tr><td>0x0B</td><td>RTC DL — day counter low byte</td></tr>
+                <tr><td>0x0C</td><td>RTC DH — day counter high bit, halt flag, carry flag</td></tr>
+            </table>
+
+            <h3>RTC Latching</h3>
+            <p>To read a consistent snapshot of the clock without it ticking mid-read, the game writes <code>0x00</code> then <code>0x01</code> to <code>$6000–$7FFF</code>. This latches the current RTC values into a separate buffer; subsequent reads from <code>$A000–$BFFF</code> return the latched copy until it is latched again:</p>
+
+            <pre><code>case MBCType::MBC3:
+    if (mbc.latch_reg == 0x00 &amp;&amp; value == 0x01) {
+        std::memcpy(mbc.rtc_latched, mbc.rtc, 5); // snapshot current time
+    }
+    mbc.latch_reg = value;
+    break;
+</code></pre>
+
+            <h3>RTC Tick</h3>
+            <p>The RTC advances independently of the CPU. Each call to <code>tick_timers()</code> forwards the elapsed cycles to <code>MBC::tick_rtc()</code>, which increments a cycle accumulator and cascades through seconds → minutes → hours → days when thresholds are crossed. The halt bit in RTC DH (<code>bit 6</code>) stops the clock when set:</p>
+
+            <pre><code>void MBC::tick_rtc(int cycles) {
+    if (type == MBCType::MBC3) {
+        if (rtc[4] &amp; 0x40) return; // halted
+        rtc_cycles += cycles;
+        if (rtc_cycles &gt;= CPU_FREQUENCY) {   // one second at ~4.19 MHz
+            rtc_cycles -= CPU_FREQUENCY;
+            if (++rtc[0] == 60) {      // seconds
+                rtc[0] = 0;
+                if (++rtc[1] == 60) {  // minutes
+                    rtc[1] = 0;
+                    if (++rtc[2] == 24) { // hours
+                        rtc[2] = 0;
+                        uint16_t day = rtc[3] | ((rtc[4] &amp; 0x01) &lt;&lt; 8);
+                        if (++day &gt;= 512) {
+                            day = 0;
+                            rtc[4] |= 0x80; // day carry flag
+                        }
+                        rtc[3] = day &amp; 0xFF;
+                        rtc[4] = (rtc[4] &amp; 0xFE) | ((day &gt;&gt; 8) &amp; 0x01);
+                    }
+                }
+            }
+        }
+    }
+}
+</code></pre>
+        </section>
+
+        <section>
+            <h2>MBC5</h2>
+            <p>MBC5 is found on most Game Boy Color titles and later Game Boy games. Its main advancement over MBC3 is support for up to 512 ROM banks (8MB) by spreading the bank number across two registers:</p>
+
+            <table>
+                <tr><th>Address range</th><th>Function</th></tr>
+                <tr><td>$2000–$2FFF</td><td>Low 8 bits of ROM bank number</td></tr>
+                <tr><td>$3000–$3FFF</td><td>Bit 8 (9th bit) of ROM bank number</td></tr>
+                <tr><td>$4000–$5FFF</td><td>RAM bank number (4 bits, up to 16 banks)</td></tr>
+            </table>
+
+            <p>Unlike MBC1 and MBC3, MBC5 allows selecting bank 0 in the switchable window, so there is no zero-bank promotion:</p>
+
+            <pre><code>case MBCType::MBC5:
+    if (addr &lt; 0x3000) {
+        mbc.rom_bank = (mbc.rom_bank &amp; 0x100) | value;         // low 8 bits
+    } else {
+        mbc.rom_bank = (mbc.rom_bank &amp; 0xFF) | ((value &amp; 0x01) &lt;&lt; 8); // bit 8
+    }
+    break;
+</code></pre>
+        </section>
+
+        <section>
+            <h2>Battery-Backed Save RAM</h2>
+            <p>Cartridges marked with the battery flag in the header contain a small CR2016-style coin cell that keeps external RAM powered when the Game Boy is off. This is how games like Pokémon store player progress.</p>
+
+            <p>The emulator mirrors this by writing the contents of <code>ext_ram</code> to a <code>.sav</code> file (same name and directory as the ROM) when the emulator closes, and loading it back on startup.</p>
+
+            <h3>RTC Persistence</h3>
+            <p>For MBC3 cartridges with an RTC, simply restoring the five register bytes is not enough — the clock should reflect time that passed while the emulator was closed. To handle this, a Unix timestamp (<code>int64_t</code>) is written to the save file immediately after the RTC bytes. On load, the difference between the saved timestamp and the current time is computed and forwarded to <code>advance_rtc()</code>, which cascades the elapsed seconds through the full register chain:</p>
+
+            <pre><code>void Memory::save_battery(const std::string&amp; rom_path) {
+    if (!has_battery || ext_ram.empty()) return;
+    std::string save_path = /* replace extension with .sav */;
+    FILE* file = fopen(save_path.c_str(), "wb");
+    if (file) {
+        fwrite(ext_ram.data(), 1, ext_ram.size(), file);
+        if (has_rtc) {
+            fwrite(mbc.rtc, 1, 5, file);
+            int64_t now = static_cast&lt;int64_t&gt;(time(nullptr));
+            fwrite(&amp;now, sizeof(now), 1, file);
+        }
+        fclose(file);
+    }
+}
+
+void Memory::load_battery(const std::string&amp; rom_path) {
+    if (!has_battery) return;
+    std::string save_path = /* replace extension with .sav */;
+    FILE* file = fopen(save_path.c_str(), "rb");
+    if (file) {
+        fread(ext_ram.data(), 1, ext_ram.size(), file);
+        if (has_rtc &amp;&amp; file_size &gt;= (long)(ext_ram.size() + 5)) {
+            fread(mbc.rtc, 1, 5, file);
+            if (file_size &gt;= (long)(ext_ram.size() + 5 + sizeof(int64_t))) {
+                int64_t saved_time = 0;
+                fread(&amp;saved_time, sizeof(saved_time), 1, file);
+                int64_t elapsed = static_cast&lt;int64_t&gt;(time(nullptr)) - saved_time;
+                if (elapsed &gt; 0)
+                    mbc.advance_rtc(elapsed);
+            }
+        }
+        fclose(file);
+    }
+}
+
+void MBC::advance_rtc(int64_t seconds) {
+    if (rtc[4] &amp; 0x40) return; // RTC halted, don't advance
+    int64_t s = rtc[0] + seconds;
+    rtc[0] = s % 60;
+    int64_t m = rtc[1] + s / 60;
+    rtc[1] = m % 60;
+    int64_t h = rtc[2] + m / 60;
+    rtc[2] = h % 24;
+    uint16_t day = rtc[3] | ((rtc[4] &amp; 0x01) &lt;&lt; 8);
+    day += static_cast&lt;uint16_t&gt;(h / 24);
+    if (day &gt;= 512) { day %= 512; rtc[4] |= 0x80; } // day carry
+    rtc[3] = day &amp; 0xFF;
+    rtc[4] = (rtc[4] &amp; 0xFE) | ((day &gt;&gt; 8) &amp; 0x01);
+}
+</code></pre>
+
+            <p>The halt flag in RTC DH is respected: if the game had halted the clock before saving, <code>advance_rtc</code> is a no-op. The save file format is compatible with other emulators (mGBA, BGB, etc.) that use the same convention of appending a Unix timestamp after the RTC bytes, so saves can be transferred between them.</p>
+        </section>
+
+        <section>
+            <h2>Games Now Possible to Run</h2>
+            <p>With MBC support in place the emulator is no longer limited to 32KB ROM-only titles. The table below shows the relationship between MBC type and the games it unlocks:</p>
+
+            <table>
+                <tr><th>MBC</th><th>Max ROM</th><th>Max RAM</th><th>Notable games</th></tr>
+                <tr><td>None</td><td>32KB</td><td>—</td><td>Tetris, Dr. Mario</td></tr>
+                <tr><td>MBC1</td><td>2MB</td><td>32KB</td><td>Super Mario Land, Kirby's Dream Land</td></tr>
+                <tr><td>MBC2</td><td>256KB</td><td>512×4-bit</td><td>Castlevania Adventure</td></tr>
+                <tr><td>MBC3</td><td>2MB</td><td>32KB + RTC</td><td>Pokémon Red/Blue/Gold/Silver/Crystal</td></tr>
+                <tr><td>MBC5</td><td>8MB</td><td>128KB</td><td>Pokémon Ruby/Sapphire (GBC), Link's Awakening DX</td></tr>
+            </table>
+
+            <p>Pokémon Blue uses MBC3 with battery-backed RAM. Its ROM is 512KB (32 banks) and it stores save data in 32KB of external RAM — both features that required everything described on this page.</p>
+        </section>
+
+        <section>
+            <h2>MBCs Not Implemented</h2>
+            <p>The Game Boy library includes a handful of other memory bank controllers beyond MBC1–5. None of them were implemented here because the games that use them are either extremely rare, region-specific, or require platform features (like IR blasters or motion sensors) that go well beyond basic emulation:</p>
+
+            <ul>
+                <li><strong>MBC6</strong> — used by only a single game (<em>Net de Get: Minigame @ 100</em>, Japan only). It adds a flash ROM that the game could write to for downloadable minigames via the Game Boy Mobile Adapter. No game in the normal Western library uses it.</li>
+                <li><strong>MBC7</strong> — found exclusively in <em>Kirby Tilt 'n' Tumble</em> and <em>Command Master</em>. It includes a two-axis accelerometer (ADXL202) that the game uses for tilt controls. Proper emulation would require mapping tilt input to mouse or gyroscope input, which is outside the scope of this project.</li>
+                <li><strong>HuC1</strong> — an MBC1 variant used by Hudson Soft titles. It replaces the upper RAM bank register with an infrared transceiver control register. The games that use it (<em>Pokémon Trading Card Game</em> sequel, etc.) are uncommon.</li>
+                <li><strong>HuC3</strong> — another Hudson Soft controller with an RTC and IR port, found in <em>Robopon Sun</em> and a few other Japan-exclusive titles.</li>
+                <li><strong>MMM01</strong> — a multi-cart MBC used for compilation cartridges sold in some regions. Its bank mapping is more complex and it is not used by any standalone retail game.</li>
+                <li><strong>Pocket Camera / GB Camera</strong> — contains a full CMOS image sensor and a custom controller chip. Emulating it accurately would require simulating camera input, which is a project of its own.</li>
+                <li><strong>TAMA5</strong> — found only in <em>Tamagotchi</em> (GB version). Has an unusual register interface and, like HuC3, includes an RTC.</li>
+            </ul>
+
+            <p>Together, MBC1, MBC2, MBC3, and MBC5 cover the overwhelming majority of the Game Boy and Game Boy Color catalog. Skipping the controllers above means missing only a small number of obscure or Japan-exclusive titles, none of which were target games for this emulator.</p>
+        </section>
+
+        <section>
+            <h2>What's Next</h2>
+            <p>MBC support unlocks the vast majority of the Game Boy library. The remaining major systems still to implement are:</p>
+            <ol>
+                <li><strong>Audio Processing Unit (APU):</strong> the Game Boy's four-channel sound system (pulse, wave, noise).</li>
+                <li><strong>Game Boy Color support:</strong> double-speed mode, extended palettes, and VRAM bank switching.</li>
+            </ol>
+        </section>
+        </article>
+    </main>
+    <nav class="page-nav bottom">
+        <a href="instructions_final.html">← Final Instructions Implementation</a>
+        <a href="index.html">Index →</a>
+    </nav>
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>

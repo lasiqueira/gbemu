@@ -82,10 +82,11 @@
                 <li><strong>Phase 5:</strong> PPU Rendering - Background, window, and sprite layers ✓</li>
                 <li><strong>Phase 6:</strong> Input System - Keyboard and gamepad support ✓</li>
                 <li><strong>Phase 7:</strong> Complete CPU - Remaining instructions ✓</li>
-                <li><strong>Phase 8:</strong> Audio (APU) - Sound channels and audio output (Planned)</li>
-                <li><strong>Phase 9:</strong> Timers - Timer registers and interrupts ✓</li>
-                <li><strong>Phase 10:</strong> MBCs - Memory bank controllers for larger ROMs (Planned)</li>
-                <li><strong>Phase 11:</strong> Serial - Master-mode transfers; slave-mode stall (no false link detection) ✓</li>
+                <li><strong>Phase 8:</strong> MBCs - Memory bank controllers for larger ROMs ✓</li>
+                <li><strong>Phase 9:</strong> Audio (APU) - Sound channels and audio output (Planned)</li>
+                <li><strong>Phase 10:</strong> Game Boy Color - Double-speed, extended palettes, VRAM banking (Planned)</li>
+                <li><strong>Phase 11:</strong> Frontend UI - ROM picker, display settings, controller remapping (Planned)</li>
+                <li><strong>Phase 12:</strong> Save States - Full emulator state serialisation (Planned)</li>
             </ul>
             
             <h3>Current Status</h3>
@@ -106,6 +107,9 @@
                 <li>✓ Sprite rendering (8x8 and 8x16 modes, flipping, transparency, priority)</li>
                 <li>✓ OAM scanning with 10-sprite-per-scanline limit</li>
                 <li>✓ V-Blank and LCD STAT interrupts</li>
+                <li>✓ Timer registers (DIV, TIMA/TMA/TAC) with timer interrupt</li>
+                <li>✓ Serial port — master-mode auto-complete; slave-mode stall</li>
+                <li>✓ Memory Bank Controllers (MBC1, MBC2, MBC3 + RTC, MBC5) with battery saves</li>
                 <li>✓ Joypad input via keyboard (Z/X/Arrows/Shift/Enter)</li>
                 <li>✓ Gamepad support (Xbox, PlayStation, Nintendo Pro controllers)</li>
                 <li>✓ Hot-plugging for controllers</li>
@@ -114,8 +118,9 @@
             <h4>In Progress / Planned</h4>
             <ul>
                 <li>⏳ Audio Processing Unit (APU) - 4 sound channels</li>
-                <li>⏳ Memory Bank Controllers (MBC1, MBC3, MBC5)</li>
-                <li>⏳ Save state support</li>
+                <li>⏳ Game Boy Color support - double-speed, extended palettes, VRAM banking</li>
+                <li>⏳ Frontend UI - ROM picker, display/audio settings, controller remapping, fast-forward</li>
+                <li>⏳ Save states - full emulator state serialisation (slots, load/save)</li>
             </ul>
 
             <h3>Table of Contents</h3>
@@ -157,22 +162,27 @@
                 </div>
                 <div class="toc-item">
                     <span class="toc-number">8.</span>
+                    <a href="memory_bank_controller.html" class="toc-link">Memory Bank Controllers (MBCs)</a>
+                    <span class="toc-status complete">Complete</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">9.</span>
                     <span class="toc-link" style="color: #888;">Audio Processing Unit (APU)</span>
                     <span class="toc-status upcoming">TODO</span>
                 </div>
                 <div class="toc-item">
-                    <span class="toc-number">9.</span>
-                    <span class="toc-link" style="color: #888;">Timer System</span>
-                    <span class="toc-status upcoming">TODO</span>
-                </div>
-                <div class="toc-item">
                     <span class="toc-number">10.</span>
-                    <span class="toc-link" style="color: #888;">Memory Bank Controllers (MBCs)</span>
+                    <span class="toc-link" style="color: #888;">Game Boy Color</span>
                     <span class="toc-status upcoming">TODO</span>
                 </div>
                 <div class="toc-item">
                     <span class="toc-number">11.</span>
-                    <span class="toc-link" style="color: #888;">Serial Communication</span>
+                    <span class="toc-link" style="color: #888;">Frontend UI</span>
+                    <span class="toc-status upcoming">TODO</span>
+                </div>
+                <div class="toc-item">
+                    <span class="toc-number">12.</span>
+                    <span class="toc-link" style="color: #888;">Save States</span>
                     <span class="toc-status upcoming">TODO</span>
                 </div>
             </div>
