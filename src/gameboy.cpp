@@ -2,8 +2,9 @@
 
 void GameBoy::reset() {
     memory = Memory{};
-    cpu = cpu::CPU{};
+    cpu = CPU{};
     ppu = PPU{};
+    apu = APU{};
 
     // Post-boot I/O register state (skipping boot ROM)
     memory.write(IO_JOYPAD, 0x3F);

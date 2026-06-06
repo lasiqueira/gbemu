@@ -374,10 +374,10 @@ int main(int argc, char** argv)
         
         ImGui::Separator();
         ImGui::Text("Flags:  Z: %d  N: %d  H: %d  C: %d",
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_ZERO),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_SUBTRACT),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_HALF_CARRY),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_CARRY));
+            get_flag(gameboy.cpu.af.low, FLAG_ZERO),
+            get_flag(gameboy.cpu.af.low, FLAG_SUBTRACT),
+            get_flag(gameboy.cpu.af.low, FLAG_HALF_CARRY),
+            get_flag(gameboy.cpu.af.low, FLAG_CARRY));
         ImGui::End();
         
         // Memory viewer - fixed to the right

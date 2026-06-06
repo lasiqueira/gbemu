@@ -5,11 +5,13 @@
 #include "cpu.h"
 #include "memory.h"
 #include "ppu.h"
+#include "apu.h"
 
 struct GameBoy {
     Memory memory;
-    cpu::CPU cpu;
+    CPU cpu;
     PPU ppu;
+    APU apu;
     bool running = false;
     
     // Reset all state to post-boot defaults

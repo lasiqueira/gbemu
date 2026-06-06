@@ -331,13 +331,14 @@ struct PPU {
 
 ### Game Boy System
 
-The `GameBoy` struct integrates CPU, memory, and PPU with timing control:
+The `GameBoy` struct integrates CPU, memory, PPU and APU with timing control:
 
 ```cpp
 struct GameBoy {
     Memory memory;
-    cpu::CPU cpu;
+    CPU cpu;
     PPU ppu;
+    APU apu;
     
     int step();                    // Execute one instruction
     int step_frame();              // Execute one frame (~70224 cycles)
