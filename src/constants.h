@@ -34,6 +34,37 @@ constexpr uint16_t IO_WY     = 0xFF4A; // Window Y Position
 constexpr uint16_t IO_WX     = 0xFF4B; // Window X Position
 constexpr uint16_t IO_IE     = 0xFFFF; // Interrupt Enable
 
+// I/O AUDIO Register Addresses
+constexpr uint16_t IO_NR10   = 0xFF10; // Channel 1 Sweep
+constexpr uint16_t IO_NR11   = 0xFF11; // Channel 1 length timer & duty cycle
+constexpr uint16_t IO_NR12   = 0xFF12; // Channel 1 volume & envelope
+constexpr uint16_t IO_NR13   = 0xFF13; // Channel 1 period low [write-only]
+constexpr uint16_t IO_NR14   = 0xFF14; // Channel 1 period high & control
+
+constexpr uint16_t IO_NR21   = 0xFF16; // Channel 2 length timer & duty cycle
+constexpr uint16_t IO_NR22   = 0xFF17; // Channel 2 volume & envelope
+constexpr uint16_t IO_NR23   = 0xFF18; // Channel 2 period low [write-only]
+constexpr uint16_t IO_NR24   = 0xFF19; // Channel 2 period high & control
+
+constexpr uint16_t IO_NR30   = 0xFF1A; // Channel 3 DAC enable
+constexpr uint16_t IO_NR31   = 0xFF1B; // Channel 3 length timer [write-only]
+constexpr uint16_t IO_NR32   = 0xFF1C; // Channel 3 output level
+constexpr uint16_t IO_NR33   = 0xFF1D; // Channel 3 period low [write-only]
+constexpr uint16_t IO_NR34   = 0xFF1E; // Channel 3 period high & control
+constexpr uint16_t IO_WAVE_RAM_START = 0xFF30; // Channel 3 wave pattern RAM (0xFF30-0xFF3F)
+constexpr uint16_t IO_WAVE_RAM_END   = 0xFF3F; // End of Channel 3 wave pattern RAM
+
+constexpr uint16_t IO_NR41   = 0xFF20; // Channel 4 length timer [write-only]
+constexpr uint16_t IO_NR42   = 0xFF21; // Channel 4 volume & envelope
+constexpr uint16_t IO_NR43   = 0xFF22; // Channel 4 frequency & randomness
+constexpr uint16_t IO_NR44   = 0xFF23; // Channel 4 control
+
+constexpr uint16_t IO_NR50   = 0xFF24; // Master volume & VIN panning
+constexpr uint16_t IO_NR51   = 0xFF25; // Sound panning
+constexpr uint16_t IO_NR52   = 0xFF26; // Audio master control
+
+
+
 // Memory map region boundaries
 constexpr uint16_t ADDR_ROM_BANK0_END  = 0x4000; // End of fixed ROM bank 0
 constexpr uint16_t ADDR_VRAM_START     = 0x8000; // Start of VRAM / end of switchable ROM

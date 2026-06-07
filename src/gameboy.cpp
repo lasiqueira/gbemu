@@ -1,10 +1,10 @@
 #include "gameboy.h"
 
-void GameBoy::reset() {
-    memory = Memory{};
+void GameBoy::reset() {  
     cpu = CPU{};
     ppu = PPU{};
     apu = APU{};
+    memory = Memory{};
 
     // Post-boot I/O register state (skipping boot ROM)
     memory.write(IO_JOYPAD, 0x3F);
