@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "constants.h"
+#include "apu.h" 
 #include <cstdio>
 #include <ctime>
 
@@ -154,7 +155,18 @@ uint8_t Memory::read(uint16_t addr) const {
             
             return result;
         }
+
+        // Audio registers: $FF10-$FF26
+        if (addr >= 0xFF10 && addr <= 0xFF26) {
+            if (apu) return apu->on_register_read(addr);
+            return io[addr - 0xFF00];
+        }
         
+        // Wave RAM: 0xFF30 - 0xFF3F
+        if (addr >= 0xFF30 && addr <= 0xFF3F) {
+            return io[addr - 0xFF00];
+        }
+
         return io[addr - ADDR_IO_START];
     }
     
@@ -316,6 +328,19 @@ void Memory::write(uint16_t addr, uint8_t value) {
                 oam[i] = read(source + i);
             }
             io[0x46] = value;
+        }
+
+        // Audio Registers: 0xFF10 - 0xFF26
+        else if (addr >= 0xFF10 && addr <= 0xFF26) {
+            io[addr - 0xFF00] = value; // Update the register file first
+            if (apu) apu->on_register_write(addr, value); // Trigger APU logic
+           
+        }
+
+        // Wave RAM: 0xFF30 - 0xFF3F
+        else if (addr >= 0xFF30 && addr <= 0xFF3F) {
+            io[addr - 0xFF00] = value;
+            if (apu) apu->on_wave_ram_write(addr - 0xFF30, value);
         }
         else {
             io[addr - ADDR_IO_START] = value;

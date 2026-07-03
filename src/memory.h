@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 
+struct APU; // Forward declaration
+
 enum class MBCType 
     {
         None,
@@ -45,6 +47,8 @@ struct Memory {
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
     uint8_t ie_register   = 0;  // $FFFF: Interrupt Enable
     
+    APU* apu = nullptr; // Pointer to APU for audio register access
+
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
     bool has_battery = false;

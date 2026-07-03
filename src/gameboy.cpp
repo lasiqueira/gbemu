@@ -6,6 +6,8 @@ void GameBoy::reset() {
     apu = APU{};
     memory = Memory{};
 
+    memory.apu = &apu; // Link APU to memory for audio register access
+
     // Post-boot I/O register state (skipping boot ROM)
     memory.write(IO_JOYPAD, 0x3F);
     memory.write(IO_LCDC, 0x91); // LCD on, BG on
@@ -68,9 +70,10 @@ int GameBoy::step_frame() {
         }
         cycles_executed += cycles;
 
-        // Update PPU and timers
+        // Update PPU, APU, and timers
         if (!cpu.stopped) {
             ppu.step(cycles, memory);
+            apu.step(cycles, memory);
         }
         memory.tick_timers(cycles);
     }
