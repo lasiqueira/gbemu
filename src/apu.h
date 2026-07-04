@@ -76,7 +76,10 @@ struct APU
     void step(int cycles, Memory& memory);
     void on_register_write(uint16_t addr, uint8_t value);
     uint8_t on_register_read(uint16_t addr);
-    void frame_seq_step(Memory& memory);
+    void frame_seq_step();
     void on_wave_ram_write(uint16_t offset, uint8_t value);
+    void clock_length();
+    void clock_sweep();
+    void clock_envelope();
 };
 

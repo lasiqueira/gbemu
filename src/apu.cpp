@@ -23,7 +23,7 @@ void APU::step(int cycles, Memory& memory) {
     // Frame sequencer: 8 steps cycling at 512 Hz = one step every 8192 cycles
     while (cycle_counter >= 8192) {
         cycle_counter -= 8192;
-        frame_seq_step(memory); // advances internal step 0→1→2→...→7→0
+        frame_seq_step(); // advances internal step 0→1→2→...→7→0
     }
 }
 
@@ -65,12 +65,33 @@ uint8_t APU::on_register_read(uint16_t addr) {
     return 0xFF;
 }
 
-void APU::frame_seq_step(Memory& memory) {
-    //TODO implement APU frame sequencer steps
+void APU::frame_seq_step() {
+    
+    switch (frame_seq_counter) {
+        case 0: clock_length(); break;
+        case 2: clock_length(); clock_sweep(); break;
+        case 4: clock_length(); break;
+        case 6: clock_length(); clock_sweep(); break;
+        case 7: clock_envelope(); break;
+    }
+   
+    frame_seq_counter = (frame_seq_counter + 1) % 8;
 }
 
 void APU::on_wave_ram_write(uint16_t offset, uint8_t value) {
     if (offset < 16) {
         channel3.wave_ram[offset] = value;
     }
+}
+
+void APU::clock_length() {
+    //TODO
+}
+
+void APU::clock_sweep() {
+    //TODO
+}
+
+void APU::clock_envelope() {
+    //TODO
 }
