@@ -268,8 +268,17 @@ void APU::on_wave_ram_write(uint16_t offset, uint8_t value) {
     }
 }
 
+void Channel::clock_length() {
+    if (length_enabled && length_counter > 0) {
+        if (--length_counter == 0) enabled = false;
+    }
+}
+
 void APU::clock_length() {
-    //TODO
+    channel1.clock_length();
+    channel2.clock_length();
+    channel3.clock_length();
+    channel4.clock_length();
 }
 
 void APU::clock_sweep() {

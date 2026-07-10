@@ -11,6 +11,7 @@ struct Channel
     int length_counter = 0;
     int period_timer = 0;
     uint8_t length_value = 0; // Stores raw length register value for triggering
+    void clock_length();
 };
 struct Envelope 
 {
