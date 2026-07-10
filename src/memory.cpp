@@ -371,7 +371,7 @@ void Memory::write_word(uint16_t addr, uint16_t value) {
 
 void Memory::tick_timers(int cycles) {
     // Update DIV (internal 16-bit counter, upper byte exposed at 0xFF04)
-    div_counter = (div_counter + cycles) & 0xFFFF;
+    div_counter = (div_counter + cycles);
     io[0x04] = static_cast<uint8_t>(div_counter >> 8);
 
     // Update TIMA if timer is enabled (TAC bit 2)
@@ -379,8 +379,8 @@ void Memory::tick_timers(int cycles) {
     if ((tac & 0x04)) {
 
         // TIMA increment thresholds (CPU cycles per tick)
-        static const int tima_thresholds[4] = {1024, 16, 64, 256};
-        int threshold = tima_thresholds[tac & 0x03];
+        static const uint16_t tima_thresholds[4] = {1024, 16, 64, 256};
+        uint16_t threshold = tima_thresholds[tac & 0x03];
 
         tima_cycles += cycles;
         while (tima_cycles >= threshold) {

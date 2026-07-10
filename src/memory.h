@@ -58,8 +58,8 @@ struct Memory {
     uint8_t joypad_state = 0xFF; // Current button states (0 = pressed, 1 = released)
 
     // Timer state
-    int div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
-    int tima_cycles = 0;  // Cycle accumulator for TIMA increments
+    uint16_t div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
+    uint16_t tima_cycles = 0;  // Cycle accumulator for TIMA increments
 
     // Advance timer counters by the given number of CPU cycles
     void tick_timers(int cycles);

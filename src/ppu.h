@@ -87,12 +87,11 @@ struct PPU
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
 
     PPUMode mode = PPUMode::OAMSearch;
-    int mode_cycles = 0;         // Cycles spent in current mode
-    int scanline = 0;            // Current scanline (0-153)
-    int window_line_counter = 0; // Track which window line to draw
-    int visible_sprite_count = 0; // Number of sprites visible on the current scanline
-    
+    uint8_t scanline = 0;            // Current scanline (0-153)
+    uint8_t window_line_counter = 0; // Track which window line to draw
+    uint8_t visible_sprite_count = 0; // Number of sprites visible on the current scanline
     bool frame_ready = false;    // True when a frame is complete and ready to display
+    uint16_t mode_cycles = 0;         // Cycles spent in current mode
     
     // Update PPU state for the given number of cycles
     void step(int cycles, Memory& memory);

@@ -204,7 +204,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
         } break;
 
         case IO_NR43: {
-            channel4.clock_divider = value & 0x07;
+            channel4.clock_div = value & 0x07;
             channel4.clock_shift = (value >> 4) & 0x0F;
             channel4.lfsr_width = (value & 0x08) ? 7 : 15; // Bit 3 determines LFSR width
         } break;
@@ -217,7 +217,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
                 channel4.envelope.env_counter = channel4.envelope.env_pace;
                 channel4.envelope.current_vol = channel4.envelope.initial_vol;
                 channel4.lfsr = 0x7FFF; // Reset LFSR to all 1s
-                channel4.period_timer = (channel4.clock_divider == 0 ? 8 : channel4.clock_divider * 16) << channel4.clock_shift;
+                channel4.period_timer = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16) << channel4.clock_shift;
                 if(channel4.length_counter == 0) {
                     channel4.length_counter = 64 - channel4.length_value; // Length counter is 64 - NR41 value
                 }
@@ -267,7 +267,7 @@ uint8_t APU::on_register_read(uint16_t addr) {
         // Channel 4 registers
         case IO_NR41: return 0xFF; // NR41 is write-only, return 0xFF
         case IO_NR42: return (channel4.envelope.initial_vol << 4) | (channel4.envelope.env_add ? 0x08 : 0) | channel4.envelope.env_pace;
-        case IO_NR43: return (channel4.clock_shift << 4) | (channel4.lfsr_width == 7 ? 0x08 : 0) | channel4.clock_divider;
+        case IO_NR43: return (channel4.clock_shift << 4) | (channel4.lfsr_width == 7 ? 0x08 : 0) | channel4.clock_div;
         case IO_NR44: return  0xBF |(channel4.length_enabled ? 0x40 : 0);
 
         default: break;
