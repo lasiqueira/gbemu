@@ -24,10 +24,11 @@ struct Envelope
 struct SquareChannel : public Channel
 {
     int period_value = 0;
-
     uint8_t duty = 0;
-    
+    uint8_t duty_pos = 0;
     Envelope envelope;
+
+    int sample() const;
 };
 
 struct SquareChannelWithSweep : public SquareChannel

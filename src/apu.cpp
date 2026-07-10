@@ -4,13 +4,39 @@
 
 
 void APU::step(int cycles, Memory& memory) {
-    
+     
+    if(channel1.enabled) {
+        channel1.period_timer -= cycles;
+        while(channel1.period_timer <= 0) {
+            channel1.period_timer += (2048 - channel1.period_value) * 4;
+            channel1.duty_pos = (channel1.duty_pos + 1) & 7;
+        }
+    }
+
+    if(channel2.enabled) {
+        channel2.period_timer -= cycles;
+        while(channel2.period_timer <= 0) {
+            channel2.period_timer += (2048 - channel2.period_value) * 4;
+            channel2.duty_pos = (channel2.duty_pos + 1) & 7;
+        }
+    }
+
     sample_counter += static_cast<float>(cycles);
     while(sample_counter >= CYCLES_PER_SAMPLE) {
         sample_counter -= CYCLES_PER_SAMPLE;
         
-        sample_buffer.push_back(0); // Left channel sample (placeholder)
-        sample_buffer.push_back(0); // Right channel sample (placeholder)
+        int ch1_sample = channel1.sample();
+        int ch2_sample = channel2.sample();
+
+        // NR51: bit 4 = CH1 left, bit 0 = CH1 right
+        //       bit 5 = CH2 left, bit 1 = CH2 right
+        int left = ((nr51 & 0x10) ? ch1_sample : 0) + ((nr51 & 0x20) ? ch2_sample : 0);
+        int right = ((nr51 & 0x01) ? ch1_sample : 0) + ((nr51 & 0x02) ? ch2_sample : 0);
+
+        // 1092 is a scaling factor to convert 4-bit volume (0-15) to 16-bit signed sample range (-32768 to 32767)
+        int scaling_factor = 1092; // 32767 / 15 ≈ 2184, but we use 1092 to avoid clipping when both channels are at max volume
+        sample_buffer.push_back(static_cast<int16_t>(left * scaling_factor)); // Left channel sample. 
+        sample_buffer.push_back(static_cast<int16_t>(right * scaling_factor)); // Right channel sample.
 
     }
     if(!master_enabled) {
@@ -18,7 +44,6 @@ void APU::step(int cycles, Memory& memory) {
     }
 
     cycle_counter += cycles;
-
 
     // Frame sequencer: 8 steps cycling at 512 Hz = one step every 8192 cycles
     while (cycle_counter >= 8192) {
@@ -80,9 +105,10 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
         case IO_NR14: {
             channel1.period_value = (channel1.period_value & 0x00FF) | ((value & 0x07) << 8);
             channel1.length_enabled = (value & 0x40) != 0;
-            if(value & 0x80) {
+            bool trigger = (value & 0x80) != 0;
+            if(trigger) {
                 if(channel1.dac_enabled) channel1.enabled = true;
-                channel1.period_timer = 2048 - channel1.period_value;
+                channel1.period_timer = (2048 - channel1.period_value) * 4; // Timer counts down every 4 cycles
                 channel1.envelope.current_vol = channel1.envelope.initial_vol;
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
 
@@ -122,7 +148,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
             bool trigger = (value & 0x80) != 0;
             if(trigger) {
                 if(channel2.dac_enabled) channel2.enabled = true;
-                channel2.period_timer = 2048 - channel2.period_value;
+                channel2.period_timer = (2048 - channel2.period_value) * 4; // Timer counts down every 4 cycles
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
                 channel2.envelope.env_counter = channel2.envelope.env_pace;
             }
@@ -154,7 +180,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
             bool trigger = (value & 0x80) != 0;
             if(trigger) {
                 if(channel3.dac_enabled) channel3.enabled = true;
-                channel3.period_timer = 2048 - channel3.period_value;
+                channel3.period_timer = (2048 - channel3.period_value) * 2; // Timer counts down every 2 cycles
                 channel3.wave_pos = 0; // Reset wave position
                 if(channel3.length_counter == 0) {
                     channel3.length_counter = 256 - channel3.length_value; // Length counter is 256 - NR31 value
@@ -287,4 +313,18 @@ void APU::clock_sweep() {
 
 void APU::clock_envelope() {
     //TODO
+}
+
+
+static constexpr uint8_t DUTY_TABLE[4] = {
+    0b00000001, // 12.5% duty
+    0b00000011, // 25% duty
+    0b00001111, // 50% duty
+    0b11111100  // 75% duty
+};
+
+int SquareChannel::sample() const {
+    if(!enabled || !dac_enabled) return 0;
+    bool high = (DUTY_TABLE[duty] >> duty_pos) & 1;
+        return high ? envelope.current_vol : 0;
 }
