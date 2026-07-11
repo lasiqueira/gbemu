@@ -19,17 +19,27 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+
+if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
 # Add march=native flag for all platforms
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
     # clang-cl supports -march=native on Windows
-    add_compile_options(-march=native -O3)
+    add_compile_options(-march=native)
     add_compile_options(-flto=thin)
-    add_link_options(-flto=thin)
 elseif(MSVC)
     # Regular MSVC uses /arch:AVX2; /O2 only in non-Debug configs to avoid conflict with /RTC1
     add_compile_options(/arch:AVX2 $<$<NOT:$<CONFIG:Debug>>:/O2>)
 else()
     add_compile_options(-march=native -O3)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-flto=thin)
+        add_link_options(-flto=thin)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        add_compile_options(-flto)
+        add_link_options(-flto)
+    endif()
 endif()
 
 # Enable optimizations for Release builds
