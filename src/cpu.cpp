@@ -3,7 +3,8 @@
 #include "disassembler.h"
 #include <print>
 
-CPU::CPU() {
+CPU::CPU()
+{
     // Initialize registers to post-boot state (skipping boot ROM)
     pc = 0x0100; // Game starts at 0x0100
     sp = 0xFFFE;
@@ -15,7 +16,8 @@ CPU::CPU() {
     hl.pair = 0x014D; // H=0x01, L=0x4D
 }
 
-void CPU::print_state() {
+void CPU::print_state()
+{
     std::println("CPU State:");
     std::println("A: {:04X}  B: {:04X}  C: {:04X}  D: {:04X}  E: {:04X}  H: {:04X}  L: {:04X}  SP: {:04X}  PC: {:04X}",
                     af.high, bc.high, bc.low, de.high, de.low, hl.high, hl.low, sp, pc);
@@ -26,10 +28,12 @@ void CPU::print_state() {
                     get_flag(af.low, FLAG_CARRY));
 }
 
-void CPU::unimplemented_instruction(uint8_t opcode, const std::vector<uint8_t>& rom) {
+void CPU::unimplemented_instruction(uint8_t opcode, const std::vector<uint8_t>& rom)
+{
     std::println("Unimplemented instruction: 0x{:02X} at PC: 0x{:04X}", opcode, pc);
 #ifdef GBEMU_DEBUG
-    if (instructions_executed > 0) {
+    if (instructions_executed > 0)
+    {
         std::println("Instructions executed before error: {}", instructions_executed);
     }
 #endif
@@ -39,22 +43,28 @@ void CPU::unimplemented_instruction(uint8_t opcode, const std::vector<uint8_t>& 
     print_state();
 }
 
-int CPU::nop() {
+int CPU::nop()
+{
     pc += 1;
     return 4; // NOP takes 4 cycles
 }
 
-int CPU::jp_a16(uint16_t addr, bool condition) {
-    if (condition) {
+int CPU::jp_a16(uint16_t addr, bool condition)
+{
+    if (condition)
+    {
         pc = addr;
         return 16; // JP takes 16 cycles if taken
-    } else {
+    }
+    else
+    {
         pc += 3; // Move past the instruction and operands
         return 12; // JP takes 12 cycles if not taken
     }
 }
 
-int CPU::xor_a(uint8_t value, int length, int cycles) {
+int CPU::xor_a(uint8_t value, int length, int cycles)
+{
     af.high ^= value;
     
     // Set flags
@@ -67,26 +77,30 @@ int CPU::xor_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::ld_rr_n16(uint16_t& dest, uint16_t value, int length, int cycles) {
+int CPU::ld_rr_n16(uint16_t& dest, uint16_t value, int length, int cycles)
+{
     dest = value;
     pc += length; // Move past the instruction and operands
     return cycles; // Return the cycle count
 }
 
-int CPU::ld_r_n8(uint8_t& dest, uint8_t value, int length, int cycles) {
+int CPU::ld_r_n8(uint8_t& dest, uint8_t value, int length, int cycles)
+{
     dest = value;
     pc += length; // Move past the instruction and operand
     return cycles; // Return the cycle count
 }
 
-int CPU::ld_hlp_a(Memory& memory, bool increment) {
+int CPU::ld_hlp_a(Memory& memory, bool increment)
+{
     memory.write(hl.pair, af.high);
     hl.pair += increment ? 1 : -1;
     pc += 1; // Move past the instruction
     return 8; // LD (HL+/-), A takes 8 cycles
 }
 
-int CPU::dec_r(uint8_t& reg) {
+int CPU::dec_r(uint8_t& reg)
+{
     reg--;
     
     // Set flags
@@ -98,39 +112,50 @@ int CPU::dec_r(uint8_t& reg) {
     return 4; // DEC r takes 4 cycles
 }
 
-int CPU::jr_e8(int8_t offset, bool condition) {
+int CPU::jr_e8(int8_t offset, bool condition)
+{
     pc += 2; // Move past the instruction
-    if (condition) {
+    if (condition)
+    {
         pc += offset; // Apply offset
         return 12; // JR takes 12 cycles if taken
-    } else {
+    }
+    else
+    {
         return 8; // JR takes 8 cycles if not taken
     }
 }
 
-int CPU::di() {
+int CPU::di()
+{
     ime = false;
     pc += 1; // Move past the instruction
     return 4; // DI takes 4 cycles
 }
 
-int CPU::ei() {
+int CPU::ei()
+{
     ime_scheduled = true;
     pc += 1; // Move past the instruction
     return 4; // EI takes 4 cycles
 }
 
-int CPU::ldh(Memory& memory, uint8_t offset, bool to_memory, int length, int cycles) {
-    if (to_memory) {
+int CPU::ldh(Memory& memory, uint8_t offset, bool to_memory, int length, int cycles)
+{
+    if (to_memory)
+    {
         memory.write(0xFF00 + offset, af.high);
-    } else {
+    }
+    else
+    {
         af.high = memory.read(0xFF00 + offset);
     }
     pc += length; // Move past the instruction and operands
     return cycles; // Return the cycle count
 }
 
-int CPU::cp_a(uint8_t value, int length, int cycles) {
+int CPU::cp_a(uint8_t value, int length, int cycles)
+{
     uint8_t result = af.high - value;
     
     // Set flags
@@ -143,20 +168,23 @@ int CPU::cp_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value, int length, int cycles) {
+int CPU::ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value, int length, int cycles)
+{
     memory.write(addr, value);
     pc += length; // Move past the instruction and operands
     return cycles; // Return the cycle count
 }
 
-int CPU::ld_a_hlp(Memory& memory, bool increment) {
+int CPU::ld_a_hlp(Memory& memory, bool increment)
+{
     af.high = memory.read(hl.pair);
     hl.pair += increment ? 1 : -1;
     pc += 1; // Move past the instruction
     return 8; // LD A, (HL+/-) takes 8 cycles
 }
 
-int CPU::inc_r(uint8_t& reg) {
+int CPU::inc_r(uint8_t& reg)
+{
     reg++;
 
     // set flags
@@ -168,26 +196,32 @@ int CPU::inc_r(uint8_t& reg) {
     return 4; // INC r takes 4 cycles
 }
 
-int CPU::call_a16(Memory& memory, uint16_t addr, bool condition) {
-    if(condition) {
+int CPU::call_a16(Memory& memory, uint16_t addr, bool condition)
+{
+    if(condition)
+    {
         sp -= 2;
         // Push current PC onto stack
         memory.write_word(sp, pc + 3); // +3 to move past CALL instruction
         pc = addr;
         return 24; // CALL takes 24 cycles if taken
-    } else {
+    }
+    else
+    {
         pc += 3; // Move past the instruction and operands
         return 12; // CALL takes 12 cycles if not taken
     }
 }
 
-int CPU::dec_rr(uint16_t& regpair) {
+int CPU::dec_rr(uint16_t& regpair)
+{
     regpair--;
     pc += 1; // Move past the instruction
     return 8; // DEC rr takes 8 cycles
 }
 
-int CPU::or_a(uint8_t value, int length, int cycles) {
+int CPU::or_a(uint8_t value, int length, int cycles)
+{
     af.high |= value;
     
     // Set flags
@@ -200,21 +234,27 @@ int CPU::or_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::ret(Memory& memory, bool condition, int cycles_if_taken, bool enable_interrupts) {
-    if (condition) {
+int CPU::ret(Memory& memory, bool condition, int cycles_if_taken, bool enable_interrupts)
+{
+    if (condition)
+    {
         pc = memory.read_word(sp);
         sp += 2;
-        if (enable_interrupts) {
+        if (enable_interrupts)
+        {
             ime = true;
         }
         return cycles_if_taken; // RET takes specified cycles if taken
-    } else {
+    }
+    else
+    {
         pc += 1; // Move past the instruction
         return 8; // RET takes 8 cycles if not taken
     }
 }
 
-int CPU::cpl() {
+int CPU::cpl()
+{
     af.high = ~af.high;
     set_flag(af.low, FLAG_SUBTRACT, true);
     set_flag(af.low, FLAG_HALF_CARRY, true);
@@ -222,23 +262,29 @@ int CPU::cpl() {
     return 4; // CPL takes 4 cycles
 }
 
-int CPU::daa() {
+int CPU::daa()
+{
     // Decimal Adjust Accumulator for BCD arithmetic
     uint8_t a = af.high;
     uint8_t correction = 0;
     
-    if (get_flag(af.low, FLAG_HALF_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && (a & 0x0F) > 9)) {
+    if (get_flag(af.low, FLAG_HALF_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && (a & 0x0F) > 9))
+    {
         correction |= 0x06;
     }
     
-    if (get_flag(af.low, FLAG_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && a > 0x99)) {
+    if (get_flag(af.low, FLAG_CARRY) || (!get_flag(af.low, FLAG_SUBTRACT) && a > 0x99))
+    {
         correction |= 0x60;
         set_flag(af.low, FLAG_CARRY, true);
     }
     
-    if (get_flag(af.low, FLAG_SUBTRACT)) {
+    if (get_flag(af.low, FLAG_SUBTRACT))
+    {
         a -= correction;
-    } else {
+    }
+    else
+    {
         a += correction;
     }
     
@@ -250,7 +296,8 @@ int CPU::daa() {
     return 4; // DAA takes 4 cycles
 }
 
-int CPU::and_a(uint8_t value, int length, int cycles) {
+int CPU::and_a(uint8_t value, int length, int cycles)
+{
     af.high &= value;
 
     // Set flags
@@ -263,7 +310,8 @@ int CPU::and_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::swap_r(uint8_t& reg) {
+int CPU::swap_r(uint8_t& reg)
+{
     reg = (reg << 4) | (reg >> 4);
 
     // Set flags
@@ -276,7 +324,8 @@ int CPU::swap_r(uint8_t& reg) {
     return 8; // SWAP r takes 8 cycles
 }
 
-int CPU::swap_mem_hl(Memory& memory) {
+int CPU::swap_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     value = (value << 4) | (value >> 4);
 
@@ -291,14 +340,16 @@ int CPU::swap_mem_hl(Memory& memory) {
     return 16; // SWAP (HL) takes 16 cycles
 }
 
-int CPU::rst(Memory& memory, uint8_t addr) {
+int CPU::rst(Memory& memory, uint8_t addr)
+{
     sp -= 2;
     memory.write_word(sp, pc + 1); // +1 to move past RST instruction
     pc = addr;
     return 16; // RST takes 16 cycles
 }
 
-int CPU::add_a(uint8_t value, int length, int cycles) {
+int CPU::add_a(uint8_t value, int length, int cycles)
+{
     uint16_t result = static_cast<uint16_t>(af.high) + static_cast<uint16_t>(value);
 
     // Set flags
@@ -313,14 +364,16 @@ int CPU::add_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::pop_rr(Memory& memory, uint16_t& dest) {
+int CPU::pop_rr(Memory& memory, uint16_t& dest)
+{
     dest = memory.read_word(sp);
     sp += 2;
     pc += 1; // Move past the instruction
     return 12; // POP rr takes 12 cycles
 }
 
-int CPU::add_hl_rr(uint16_t value) {
+int CPU::add_hl_rr(uint16_t value)
+{
     uint32_t result = static_cast<uint32_t>(hl.pair) + static_cast<uint32_t>(value);
 
     // Set flags
@@ -334,31 +387,36 @@ int CPU::add_hl_rr(uint16_t value) {
     return 8; // ADD HL, rr takes 8 cycles
 }
 
-int CPU::inc_rr(uint16_t& regpair) {
+int CPU::inc_rr(uint16_t& regpair)
+{
     regpair++;
     pc += 1; // Move past the instruction
     return 8; // INC rr takes 8 cycles
 }
 
-int CPU::push_rr(Memory& memory, uint16_t value) {
+int CPU::push_rr(Memory& memory, uint16_t value)
+{
     sp -= 2;
     memory.write_word(sp, value);
     pc += 1; // Move past the instruction
     return 16; // PUSH rr takes 16 cycles
 }
 
-int CPU::jp_hl() {
+int CPU::jp_hl()
+{
     pc = hl.pair;
     return 4; // JP HL takes 4 cycles
 }
 
-int CPU::res(uint8_t bit, uint8_t& reg) {
+int CPU::res(uint8_t bit, uint8_t& reg)
+{
     reg &= ~(1 << bit);
     pc += 2; // Move past the instruction
     return 8; // RES b, r takes 8 cycles
 }
 
-int CPU::res_mem_hl(Memory& memory, uint8_t bit) {
+int CPU::res_mem_hl(Memory& memory, uint8_t bit)
+{
     uint8_t value = memory.read(hl.pair);
     value &= ~(1 << bit);
     memory.write(hl.pair, value);
@@ -366,7 +424,8 @@ int CPU::res_mem_hl(Memory& memory, uint8_t bit) {
     return 16; // RES b, (HL) takes 16 cycles
 }
 
-int CPU::bit_r(uint8_t& reg, uint8_t bit) {
+int CPU::bit_r(uint8_t& reg, uint8_t bit)
+{
     set_flag(af.low, FLAG_ZERO, !(reg & (1 << bit)));
     set_flag(af.low, FLAG_SUBTRACT, false);
     set_flag(af.low, FLAG_HALF_CARRY, true);
@@ -374,7 +433,8 @@ int CPU::bit_r(uint8_t& reg, uint8_t bit) {
     return 8; // BIT b, r takes 8 cycles
 }
 
-int CPU::bit_mem_hl(Memory& memory, uint8_t bit) {
+int CPU::bit_mem_hl(Memory& memory, uint8_t bit)
+{
     uint8_t value = memory.read(hl.pair);
     set_flag(af.low, FLAG_ZERO, !(value & (1 << bit)));
     set_flag(af.low, FLAG_SUBTRACT, false);
@@ -383,7 +443,8 @@ int CPU::bit_mem_hl(Memory& memory, uint8_t bit) {
     return 12; // BIT b, (HL) takes 12 cycles
 }
 
-int CPU::inc_mem_hl(Memory& memory) {
+int CPU::inc_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     value++;
 
@@ -397,7 +458,8 @@ int CPU::inc_mem_hl(Memory& memory) {
     return 12; // INC (HL) takes 12 cycles
 }
 
-int CPU::dec_mem_hl(Memory& memory) {
+int CPU::dec_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     uint8_t result = value - 1;
 
@@ -411,7 +473,8 @@ int CPU::dec_mem_hl(Memory& memory) {
     return 12; // DEC (HL) takes 12 cycles
 }
 
-int CPU::sla_r(uint8_t& reg) {
+int CPU::sla_r(uint8_t& reg)
+{
     bool msb = (reg & 0x80) != 0;
     reg <<= 1;
     reg &= 0xFE; // LSB is always 0
@@ -426,7 +489,8 @@ int CPU::sla_r(uint8_t& reg) {
     return 8; // SLA r takes 8 cycles
 }
 
-int CPU::sla_mem_hl(Memory& memory) {
+int CPU::sla_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool msb = (value & 0x80) != 0;
     value <<= 1;
@@ -443,7 +507,8 @@ int CPU::sla_mem_hl(Memory& memory) {
     return 16; // SLA (HL) takes 16 cycles
 }
 
-int CPU::rlca() {
+int CPU::rlca()
+{
     bool msb = (af.high & 0x80) != 0;
     af.high = (af.high << 1) | (msb ? 1 : 0);
 
@@ -458,7 +523,8 @@ int CPU::rlca() {
 
 }
 
-int CPU::rrca() {
+int CPU::rrca()
+{
     bool lsb = (af.high & 0x01) != 0;
     af.high = (af.high >> 1) | (lsb ? 0x80 : 0);
 
@@ -472,7 +538,8 @@ int CPU::rrca() {
     return 4; // RRCA takes 4 cycles
 }
 
-int CPU::rla() {
+int CPU::rla()
+{
     bool msb = (af.high & 0x80) != 0;
     af.high = (af.high << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
 
@@ -486,7 +553,8 @@ int CPU::rla() {
     return 4; // RLA takes 4 cycles
 }
 
-int CPU::rra() {
+int CPU::rra()
+{
     bool lsb = (af.high & 0x01) != 0;
     af.high = (af.high >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
 
@@ -500,7 +568,8 @@ int CPU::rra() {
     return 4; // RRA takes 4 cycles
 }
 
-int CPU::scf() {
+int CPU::scf()
+{
     set_flag(af.low, FLAG_CARRY, true);
     set_flag(af.low, FLAG_SUBTRACT, false);
     set_flag(af.low, FLAG_HALF_CARRY, false);
@@ -508,7 +577,8 @@ int CPU::scf() {
     return 4; // SCF takes 4 cycles
 }
 
-int CPU::ccf() {
+int CPU::ccf()
+{
     bool carry = get_flag(af.low, FLAG_CARRY);
     set_flag(af.low, FLAG_CARRY, !carry);
     set_flag(af.low, FLAG_SUBTRACT, false);
@@ -517,18 +587,23 @@ int CPU::ccf() {
     return 4; // CCF takes 4 cycles
 }
 
-int CPU::halt(Memory& memory) {
+int CPU::halt(Memory& memory)
+{
     uint8_t pending = memory.read(0xFF0F) & memory.read(0xFFFF) & 0x1F;
-    if(!ime && pending) {
+    if(!ime && pending)
+    {
         halt_bug = true; // Trigger HALT bug if IME is disabled and there's a pending interrupt
-    } else {
+    }
+    else
+    {
         halted = true; // Set the CPU to halted state
     }
     pc += 1; // Move past the instruction
     return 4; // HALT takes 4 cycles
 }
 
-int CPU::adc_a(uint8_t value, int length, int cycles) {
+int CPU::adc_a(uint8_t value, int length, int cycles)
+{
     uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(af.high) + static_cast<uint16_t>(value) + carry;
 
@@ -544,7 +619,8 @@ int CPU::adc_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::sub_a(uint8_t value, int length, int cycles) {
+int CPU::sub_a(uint8_t value, int length, int cycles)
+{
     uint16_t result = static_cast<uint16_t>(af.high) - static_cast<uint16_t>(value);
 
     // Set flags
@@ -559,7 +635,8 @@ int CPU::sub_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::sbc_a(uint8_t value, int length, int cycles) {
+int CPU::sbc_a(uint8_t value, int length, int cycles)
+{
     uint16_t carry = get_flag(af.low, FLAG_CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(af.high) - static_cast<uint16_t>(value) - carry;
 
@@ -575,7 +652,8 @@ int CPU::sbc_a(uint8_t value, int length, int cycles) {
     return cycles; // Return the cycle count
 }
 
-int CPU::rlc_r(uint8_t& reg) {
+int CPU::rlc_r(uint8_t& reg)
+{
     bool msb = (reg & 0x80) != 0;
     reg = (reg << 1) | (msb ? 1 : 0);
 
@@ -589,7 +667,8 @@ int CPU::rlc_r(uint8_t& reg) {
     return 8; // RLC r takes 8 cycles
 }
 
-int CPU::rlc_mem_hl(Memory& memory) {
+int CPU::rlc_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool msb = (value & 0x80) != 0;
     value = (value << 1) | (msb ? 1 : 0);
@@ -605,7 +684,8 @@ int CPU::rlc_mem_hl(Memory& memory) {
     return 16; // RLC (HL) takes 16 cycles
 }
 
-int CPU::rrc_r(uint8_t& reg) {
+int CPU::rrc_r(uint8_t& reg)
+{
     bool lsb = (reg & 0x01) != 0;
     reg = (reg >> 1) | (lsb ? 0x80 : 0);
 
@@ -619,7 +699,8 @@ int CPU::rrc_r(uint8_t& reg) {
     return 8; // RRC r takes 8 cycles
 }
 
-int CPU::rrc_mem_hl(Memory& memory) {
+int CPU::rrc_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool lsb = (value & 0x01) != 0;
     value = (value >> 1) | (lsb ? 0x80 : 0);
@@ -635,7 +716,8 @@ int CPU::rrc_mem_hl(Memory& memory) {
     return 16; // RRC (HL) takes 16 cycles
 }
 
-int CPU::rl_r(uint8_t& reg) {
+int CPU::rl_r(uint8_t& reg)
+{
     bool msb = (reg & 0x80) != 0;
     reg = (reg << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
 
@@ -649,7 +731,8 @@ int CPU::rl_r(uint8_t& reg) {
     return 8; // RL r takes 8 cycles
 }
 
-int CPU::rl_mem_hl(Memory& memory) {
+int CPU::rl_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool msb = (value & 0x80) != 0;
     value = (value << 1) | (get_flag(af.low, FLAG_CARRY) ? 1 : 0);
@@ -665,7 +748,8 @@ int CPU::rl_mem_hl(Memory& memory) {
     return 16; // RL (HL) takes 16 cycles
 }
 
-int CPU::rr_r(uint8_t& reg) {
+int CPU::rr_r(uint8_t& reg)
+{
     bool lsb = (reg & 0x01) != 0;
     reg = (reg >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
 
@@ -679,7 +763,8 @@ int CPU::rr_r(uint8_t& reg) {
     return 8; // RR r takes 8 cycles
 }
 
-int CPU::rr_mem_hl(Memory& memory) {
+int CPU::rr_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool lsb = (value & 0x01) != 0;
     value = (value >> 1) | (get_flag(af.low, FLAG_CARRY) ? 0x80 : 0);
@@ -695,7 +780,8 @@ int CPU::rr_mem_hl(Memory& memory) {
     return 16; // RR (HL) takes 16 cycles
 }
 
-int CPU::sra_r(uint8_t& reg) {
+int CPU::sra_r(uint8_t& reg)
+{
     bool msb = (reg & 0x80) != 0;
     bool lsb = (reg & 0x01) != 0;
     reg = (reg >> 1) | (msb ? 0x80 : 0);
@@ -710,7 +796,8 @@ int CPU::sra_r(uint8_t& reg) {
     return 8; // SRA r takes 8 cycles
 }
 
-int CPU::sra_mem_hl(Memory& memory) {
+int CPU::sra_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool msb = (value & 0x80) != 0;
     bool lsb = (value & 0x01) != 0;
@@ -727,7 +814,8 @@ int CPU::sra_mem_hl(Memory& memory) {
     return 16; // SRA (HL) takes 16 cycles
 }
 
-int CPU::srl_r(uint8_t& reg) {
+int CPU::srl_r(uint8_t& reg)
+{
     bool lsb = (reg & 0x01) != 0;
     reg >>= 1; // MSB becomes 0
 
@@ -741,7 +829,8 @@ int CPU::srl_r(uint8_t& reg) {
     return 8; // SRL r takes 8 cycles
 }
 
-int CPU::srl_mem_hl(Memory& memory) {
+int CPU::srl_mem_hl(Memory& memory)
+{
     uint8_t value = memory.read(hl.pair);
     bool lsb = (value & 0x01) != 0;
     value >>= 1; // MSB becomes 0
@@ -757,13 +846,15 @@ int CPU::srl_mem_hl(Memory& memory) {
     return 16; // SRL (HL) takes 16 cycles
 }
 
-int CPU::set(uint8_t bit, uint8_t& reg) {
+int CPU::set(uint8_t bit, uint8_t& reg)
+{
     reg |= (1 << bit);
     pc += 2; // Move past the instruction
     return 8; // SET b, r takes 8 cycles
 }
 
-int CPU::set_mem_hl(Memory& memory, uint8_t bit) {
+int CPU::set_mem_hl(Memory& memory, uint8_t bit)
+{
     uint8_t value = memory.read(hl.pair);
     value |= (1 << bit);
     memory.write(hl.pair, value);
@@ -771,7 +862,8 @@ int CPU::set_mem_hl(Memory& memory, uint8_t bit) {
     return 16; // SET b, (HL) takes 16 cycles
 }
 
-int CPU::stop() {
+int CPU::stop()
+{
     // On DMG, STOP halts the CPU until a button press, but no software
     // intentionally uses it except for CGB speed switching.
     // stopped = true;
@@ -779,13 +871,15 @@ int CPU::stop() {
     return 4;
 }
 
-int CPU::ld_mem_sp(Memory& memory, uint16_t addr) {
+int CPU::ld_mem_sp(Memory& memory, uint16_t addr)
+{
     memory.write_word(addr, sp);
     pc += 3; // Move past the instruction and operands
     return 20; // LD (a16), SP takes 20 cycles
 }
 
-int CPU::add_sp_e8(int8_t value) {
+int CPU::add_sp_e8(int8_t value)
+{
     uint16_t result = sp + value;
 
     // Set flags
@@ -800,7 +894,8 @@ int CPU::add_sp_e8(int8_t value) {
     return 16; // ADD SP, e8 takes 16 cycles
 }
 
-int CPU::ld_hl_sp_e8(int8_t value) {
+int CPU::ld_hl_sp_e8(int8_t value)
+{
     uint16_t result = sp + value;
 
     // Set flags
@@ -816,19 +911,22 @@ int CPU::ld_hl_sp_e8(int8_t value) {
 }
 
 // Execute one instruction, return cycles taken
-int CPU::execute_instruction(Memory& memory) {
+int CPU::execute_instruction(Memory& memory)
+{
 #ifdef GBEMU_DEBUG
     // Increment counter (debug only)
     // Console printing disabled for performance
     instructions_executed++;
     pc_history.push_back(pc);
-    if(pc_history.size() > 200) {
+    if(pc_history.size() > 200)
+    {
         pc_history.pop_front();
     }
 #endif
     uint16_t pc_before = pc;
     uint8_t opcode = memory.read(pc);
-    int cycles = [&]() -> int { switch (opcode) {
+    int cycles = [&]() -> int { switch (opcode)
+    {
         case 0x00: return nop(); // NOP
         case 0x01: return ld_rr_n16(bc.pair, memory.read_word(pc + 1)); // LD BC, n16
         case 0x02: return ld_mem_n8(memory, bc.pair, af.high, 1, 8); // LD (BC), A
@@ -1093,82 +1191,95 @@ int CPU::execute_instruction(Memory& memory) {
             unimplemented_instruction(opcode, memory.rom);
             return -1; // Indicate error for unimplemented instruction
     } }();
-    if(halt_bug) {
+    if(halt_bug)
+    {
         pc = pc_before; // Don't advance PC if halt bug is active
         halt_bug = false; // Clear halt bug after it has taken effect
     }
     return cycles;
 }
 
-int CPU::cb_execute_instruction(Memory& memory) {
+int CPU::cb_execute_instruction(Memory& memory)
+{
     uint8_t opcode = memory.read(pc + 1);
     uint8_t reg_index = opcode & 0x07;  // Extract register bits
     uint8_t* regs[] = {&bc.high, &bc.low, &de.high, &de.low, 
                         &hl.high, &hl.low, nullptr, &af.high};
     // RLC (0x00-0x07)
-    if (opcode >= 0x00 && opcode <= 0x07) {
+    if (opcode >= 0x00 && opcode <= 0x07)
+    {
         if (reg_index == 6) return rlc_mem_hl(memory);
         return rlc_r(*regs[reg_index]);
     }
     
     // RRC (0x08-0x0F)
-    if (opcode >= 0x08 && opcode <= 0x0F) {
+    if (opcode >= 0x08 && opcode <= 0x0F)
+    {
         if (reg_index == 6) return rrc_mem_hl(memory);
         return rrc_r(*regs[reg_index]);
     }
     
     // RL (0x10-0x17)
-    if (opcode >= 0x10 && opcode <= 0x17) {
+    if (opcode >= 0x10 && opcode <= 0x17)
+    {
         if (reg_index == 6) return rl_mem_hl(memory);
         return rl_r(*regs[reg_index]);
     }
     
     // RR (0x18-0x1F)
-    if (opcode >= 0x18 && opcode <= 0x1F) {
+    if (opcode >= 0x18 && opcode <= 0x1F)
+    {
         if (reg_index == 6) return rr_mem_hl(memory);
         return rr_r(*regs[reg_index]);
     }
     
     // SLA (0x20-0x27)
-    if (opcode >= 0x20 && opcode <= 0x27) {
+    if (opcode >= 0x20 && opcode <= 0x27)
+    {
         if (reg_index == 6) return sla_mem_hl(memory);
         return sla_r(*regs[reg_index]);
     }
 
     // SRA (0x28-0x2F)
-    if (opcode >= 0x28 && opcode <= 0x2F) {
+    if (opcode >= 0x28 && opcode <= 0x2F)
+    {
         if (reg_index == 6) return sra_mem_hl(memory);
         return sra_r(*regs[reg_index]);
     }
 
     // SWAP (0x30-0x37)
-    if (opcode >= 0x30 && opcode <= 0x37) {
+    if (opcode >= 0x30 && opcode <= 0x37)
+    {
         if (reg_index == 6) return swap_mem_hl(memory);
         return swap_r(*regs[reg_index]);
     }
 
     // SRL (0x38-0x3F)
-    if (opcode >= 0x38 && opcode <= 0x3F) {
+    if (opcode >= 0x38 && opcode <= 0x3F)
+    {
         if (reg_index == 6) return srl_mem_hl(memory);
         return srl_r(*regs[reg_index]);
     }   
 
     // BIT b, r and BIT b, (HL) (0x40-0x7F)
-    if (opcode >= 0x40 && opcode <= 0x7F) {
+    if (opcode >= 0x40 && opcode <= 0x7F)
+    {
         uint8_t bit = (opcode - 0x40) / 8;
         if (reg_index == 6) return bit_mem_hl(memory, bit);
         return bit_r(*regs[reg_index], bit);
     }
 
     // RES b, r and RES b, (HL) (0x80-0xBF)
-    if (opcode >= 0x80 && opcode <= 0xBF) {
+    if (opcode >= 0x80 && opcode <= 0xBF)
+    {
         uint8_t bit = (opcode - 0x80) / 8;
         if (reg_index == 6) return res_mem_hl(memory, bit);
         return res(bit, *regs[reg_index]);
     }
     
     // SET b, r and SET b, (HL) (0xC0-0xFF)
-    if (opcode >= 0xC0 && opcode <= 0xFF) {
+    if (opcode >= 0xC0 && opcode <= 0xFF)
+    {
         uint8_t bit = (opcode - 0xC0) / 8;
         if (reg_index == 6) return set_mem_hl(memory, bit);
         return set(bit, *regs[reg_index]);

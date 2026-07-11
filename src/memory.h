@@ -45,7 +45,7 @@ struct Memory {
     uint8_t oam[0xA0]     = {}; // $FE00-$FE9F: Sprite Attribute Table
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
-    uint8_t ie_register   = 0;  // $FFFF: Interrupt Enable
+    uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
     
     APU* apu = nullptr; // Pointer to APU for audio register access
 

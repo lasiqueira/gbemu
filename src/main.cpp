@@ -13,14 +13,14 @@
 
 struct WindowLayout
 {
-    int game_x      = 0;
-    int game_width  = 0;
+    int game_x = 0;
+    int game_width = 0;
     int game_height = 0;
-    int window_width  = 0;
+    int window_width = 0;
     int window_height = 0;
     // Debug-only — zero in release builds
     int disasm_width = 0;
-    int cpu_height   = 0;
+    int cpu_height = 0;
     int memory_width = 0;
 };
 
@@ -239,7 +239,8 @@ void handle_input(SDL_Event& event)
     }
 
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad) {
+    if (prev & ~joypad)
+    {
         gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
@@ -286,7 +287,8 @@ void handle_gamepad_input(SDL_Event& event)
     }
 
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad) {
+    if (prev & ~joypad)
+    {
         gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }

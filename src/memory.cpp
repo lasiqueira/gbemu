@@ -4,7 +4,8 @@
 #include <cstdio>
 #include <ctime>
 
-void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
+void Memory::load_rom(const std::vector<uint8_t>& rom_data)
+{
     rom = rom_data;
     mbc = MBC{}; // Reset MBC state
     has_battery = false;
@@ -15,7 +16,8 @@ void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
     uint8_t ram_size = rom[ROM_HEADER_RAM_SIZE];
 
     // set MBC type and flags
-    switch(cart_type) {
+    switch (cart_type)
+    {
         case 0x00: mbc.type = MBCType::None; break;// ROM ONLY
         
         case 0x01: mbc.type = MBCType::MBC1; break;// MBC1
@@ -44,7 +46,8 @@ void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
     num_rom_banks = 2 << rom_size; // 0=32KB(2 banks), 1=64KB(4 banks), 2=128KB(8 banks), etc.
 
     // set RAM size
-    switch(ram_size) {
+    switch (ram_size)
+    {
         case 0x00: num_ram_banks = 0; break; // No RAM
         case 0x01: num_ram_banks = 0; break; // unused
         case 0x02: num_ram_banks = 1; break; // 8KB RAM
@@ -53,28 +56,38 @@ void Memory::load_rom(const std::vector<uint8_t>& rom_data) {
         case 0x05: num_ram_banks = 8; break; // 64KB RAM (8 banks of 8KB each)
     }
     
-    if (mbc.type == MBCType::MBC2) {
+    if (mbc.type == MBCType::MBC2)
+    {
         ext_ram.resize(MBC2_RAM_SIZE, 0);
-    } else {
+    }
+    else
+    {
         ext_ram.resize(num_ram_banks * RAM_BANK_SIZE, 0);
     }
 }
 
-uint8_t Memory::read(uint16_t addr) const {
-    if(addr < ADDR_ROM_BANK0_END) {
-        if(mbc.type == MBCType::MBC1 && mbc.banking_mode) {
+uint8_t Memory::read(uint16_t addr) const
+{
+    if (addr < ADDR_ROM_BANK0_END)
+    {
+        if (mbc.type == MBCType::MBC1 && mbc.banking_mode)
+        {
             uint32_t bank = (mbc.ram_bank << 5) % num_rom_banks;
             return rom[bank * ROM_BANK_SIZE + addr];
         }
         return rom[addr];
     }
 
-    if(addr < ADDR_VRAM_START) {
+    if (addr < ADDR_VRAM_START)
+    {
         uint32_t bank;
         
-        if(mbc.type == MBCType::MBC1) {
+        if (mbc.type == MBCType::MBC1)
+        {
             bank = ((mbc.ram_bank << 5) | mbc.rom_bank) % num_rom_banks;
-        } else {
+        }
+        else
+        {
             bank = mbc.rom_bank % num_rom_banks;
         }
 
@@ -82,27 +95,33 @@ uint8_t Memory::read(uint16_t addr) const {
     }
     
     // VRAM: $8000-$9FFF
-    if (addr < ADDR_EXT_RAM_START) {
+    if (addr < ADDR_EXT_RAM_START)
+    {
         return vram[addr - ADDR_VRAM_START];
     }
     
     // External RAM: $A000-$BFFF
-    if (addr < ADDR_WRAM_START) {
-        if(!mbc.ram_enabled) return 0xFF;
+    if (addr < ADDR_WRAM_START)
+    {
+        if (!mbc.ram_enabled) return 0xFF;
         
-        if(mbc.type == MBCType::MBC2) {
+        if (mbc.type == MBCType::MBC2)
+        {
             return ext_ram[addr & MBC2_RAM_MASK] | 0xF0; // upper 4 bits undefined, return as 1s
         }
 
-        if(mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08) {
-            if(has_rtc) {
+        if (mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08)
+        {
+            if (has_rtc)
+            {
                 return mbc.rtc_latched[mbc.ram_bank - 0x08];
             }
 
             return 0xFF;
         }
 
-        if(!ext_ram.empty()) {
+        if (!ext_ram.empty())
+        {
             uint8_t bank = (mbc.type == MBCType::MBC1 && !mbc.banking_mode) ? 0 : mbc.ram_bank;
             uint32_t offset = bank * RAM_BANK_SIZE + (addr - ADDR_EXT_RAM_START);
             return ext_ram[offset % ext_ram.size()];
@@ -112,43 +131,52 @@ uint8_t Memory::read(uint16_t addr) const {
     }
     
     // Work RAM: $C000-$DFFF
-    if (addr < ADDR_ECHO_RAM_START) {
+    if (addr < ADDR_ECHO_RAM_START)
+    {
         return wram[addr - ADDR_WRAM_START];
     }
     
     // Echo RAM: $E000-$FDFF (mirror of $C000-$DDFF)
-    if (addr < OAM_BASE) {
+    if (addr < OAM_BASE)
+    {
         return wram[addr - ADDR_ECHO_RAM_START];
     }
     
     // OAM: $FE00-$FE9F
-    if (addr < ADDR_OAM_END) {
+    if (addr < ADDR_OAM_END)
+    {
         return oam[addr - OAM_BASE];
     }
     
     // Prohibited area: $FEA0-$FEFF
-    if (addr < ADDR_IO_START) {
+    if (addr < ADDR_IO_START)
+    {
         return 0xFF;
     }
     
     // I/O Registers: $FF00-$FF7F
-    if (addr < ADDR_HRAM_START) {
+    if (addr < ADDR_HRAM_START)
+    {
         // Joypad register (0xFF00)
-        if (addr == IO_JOYPAD) {
+        if (addr == IO_JOYPAD)
+        {
             uint8_t joyp = io[0];
             uint8_t result = 0xC0; // Bits 6-7 always set
             
             // Bit 4: Select direction keys (0 = selected)
             // Bit 5: Select button keys (0 = selected)
-            if (!(joyp & 0x10)) { // Direction keys selected
+            if (!(joyp & 0x10))
+            { // Direction keys selected
                 result |= 0x10;
                 result |= (joypad_state >> 4) & 0x0F; // Bits 0-3: Right, Left, Up, Down
             }
-            else if (!(joyp & 0x20)) { // Button keys selected
+            else if (!(joyp & 0x20))
+            { // Button keys selected
                 result |= 0x20;
                 result |= joypad_state & 0x0F; // Bits 0-3: A, B, Select, Start
             }
-            else {
+            else
+            {
                 result |= 0x30; // Both unselected
                 result |= 0x0F; // All buttons released
             }
@@ -157,13 +185,15 @@ uint8_t Memory::read(uint16_t addr) const {
         }
 
         // Audio registers: $FF10-$FF26
-        if (addr >= 0xFF10 && addr <= 0xFF26) {
+        if (addr >= 0xFF10 && addr <= 0xFF26)
+        {
             if (apu) return apu->on_register_read(addr);
             return io[addr - 0xFF00];
         }
         
         // Wave RAM: 0xFF30 - 0xFF3F
-        if (addr >= 0xFF30 && addr <= 0xFF3F) {
+        if (addr >= 0xFF30 && addr <= 0xFF3F)
+        {
             return io[addr - 0xFF00];
         }
 
@@ -171,7 +201,8 @@ uint8_t Memory::read(uint16_t addr) const {
     }
     
     // High RAM: $FF80-$FFFE
-    if (addr < IO_IE) {
+    if (addr < IO_IE)
+    {
         return hram[addr - ADDR_HRAM_START];
     }
     
@@ -179,24 +210,29 @@ uint8_t Memory::read(uint16_t addr) const {
     return ie_register;
 }
 
-void Memory::write(uint16_t addr, uint8_t value) {
+void Memory::write(uint16_t addr, uint8_t value)
+{
     
     // RAM ENABLE: $0000-$1FFF (MBC1/MBC3), $0000-$3FFF (MBC2)
-    if (addr < MBC_RAM_ENABLE_END) {
-        if(mbc.type == MBCType::MBC2 && (addr & 0x100)) return; // bit 8 set = not RAM enable
+    if (addr < MBC_RAM_ENABLE_END)
+    {
+        if (mbc.type == MBCType::MBC2 && (addr & 0x100)) return; // bit 8 set = not RAM enable
         mbc.ram_enabled = (value & 0x0F) == 0x0A; // 0x0A enables RAM, any other value disables it
         return;
     }
     
     // ROM BANK NUMBER: $2000-$3FFF (MBC1/MBC3), $0000-$3FFF (MBC2)
-    if (addr < ADDR_ROM_BANK0_END){
-        switch (mbc.type) {
+    if (addr < ADDR_ROM_BANK0_END)
+    {
+        switch (mbc.type)
+        {
             case MBCType::MBC1:
                 mbc.rom_bank = value & 0x1F; 
                 if (mbc.rom_bank == 0) mbc.rom_bank = 1;
                 break;
             case MBCType::MBC2:
-                if (addr & 0x100) {  // only when bit 8 of address is set
+                if (addr & 0x100)
+                {  // only when bit 8 of address is set
                     mbc.rom_bank = value & 0x0F; 
                     if (mbc.rom_bank == 0) mbc.rom_bank = 1; 
                 }
@@ -206,9 +242,12 @@ void Memory::write(uint16_t addr, uint8_t value) {
                 if (mbc.rom_bank == 0) mbc.rom_bank = 1;
                 break;
             case MBCType::MBC5:
-                if(addr < 0x3000) {
+                if (addr < 0x3000)
+                {
                     mbc.rom_bank = (mbc.rom_bank & 0x100) | value; // low 8 bits
-                } else {
+                }
+                else
+                {
                     mbc.rom_bank = (mbc.rom_bank & 0xFF) | ((value & 0x01) << 8); // bit 9
                 }
                 break;
@@ -219,8 +258,10 @@ void Memory::write(uint16_t addr, uint8_t value) {
     }
 
     // RAM BANK NUMBER: $4000-$5FFF (MBC1), $4000-$5FFF (MBC3), not used in MBC2
-    if (addr < MBC_RAM_BANK_END) {
-        switch(mbc.type) {
+    if (addr < MBC_RAM_BANK_END)
+    {
+        switch (mbc.type)
+        {
             case MBCType::MBC1: mbc.ram_bank = value & 0x03; break;
             case MBCType::MBC3: mbc.ram_bank = value; break;
             case MBCType::MBC5: mbc.ram_bank = value & 0x0F; break;
@@ -230,13 +271,16 @@ void Memory::write(uint16_t addr, uint8_t value) {
     }
 
     // Banking Mode (MBC1) / Latch Clock (MBC3
-    if (addr < ADDR_VRAM_START) {
-        switch (mbc.type) {
+    if (addr < ADDR_VRAM_START)
+    {
+        switch (mbc.type)
+        {
             case MBCType::MBC1:
                 mbc.banking_mode = value & 0x01;
                 break;
             case MBCType::MBC3:
-                if (mbc.latch_reg == 0x00 && value == 0x01) {
+                if (mbc.latch_reg == 0x00 && value == 0x01)
+                {
                     std::memcpy(mbc.rtc_latched, mbc.rtc, 5);
                 }
                 mbc.latch_reg = value;
@@ -248,19 +292,26 @@ void Memory::write(uint16_t addr, uint8_t value) {
     }
 
     // VRAM: $8000-$9FFF
-    if (addr < ADDR_EXT_RAM_START) {
+    if (addr < ADDR_EXT_RAM_START)
+    {
         vram[addr - ADDR_VRAM_START] = value;
         return;
     }
     
     // External RAM: $A000-$BFFF (not used in Tetris)
-    if (addr < ADDR_WRAM_START) {
+    if (addr < ADDR_WRAM_START)
+    {
         if (!mbc.ram_enabled) return;
-        if (mbc.type == MBCType::MBC2) {
+        if (mbc.type == MBCType::MBC2)
+        {
             ext_ram[addr & MBC2_RAM_MASK] = value & 0x0F;
-        } else if (mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08 && has_rtc) {
+        }
+        else if (mbc.type == MBCType::MBC3 && mbc.ram_bank >= 0x08 && has_rtc)
+        {
             mbc.rtc[mbc.ram_bank - 0x08] = value;
-        } else if (!ext_ram.empty()) {
+        }
+        else if (!ext_ram.empty())
+        {
             uint8_t bank = (mbc.type == MBCType::MBC1 && !mbc.banking_mode) ? 0 : mbc.ram_bank;
             uint32_t offset = bank * RAM_BANK_SIZE + (addr - ADDR_EXT_RAM_START);
             ext_ram[offset % ext_ram.size()] = value; 
@@ -269,32 +320,38 @@ void Memory::write(uint16_t addr, uint8_t value) {
     }
     
     // Work RAM: $C000-$DFFF
-    if (addr < ADDR_ECHO_RAM_START) {
+    if (addr < ADDR_ECHO_RAM_START)
+    {
         wram[addr - ADDR_WRAM_START] = value;
         return;
     }
     
     // Echo RAM: $E000-$FDFF (mirror of $C000-$DDFF)
-    if (addr < OAM_BASE) {
+    if (addr < OAM_BASE)
+    {
         wram[addr - ADDR_ECHO_RAM_START] = value;
         return;
     }
     
     // OAM: $FE00-$FE9F
-    if (addr < ADDR_OAM_END) {
+    if (addr < ADDR_OAM_END)
+    {
         oam[addr - OAM_BASE] = value;
         return;
     }
     
     // Prohibited area: $FEA0-$FEFF
-    if (addr < ADDR_IO_START) {
+    if (addr < ADDR_IO_START)
+    {
         return;
     }
     
     // I/O Registers: $FF00-$FF7F
-    if (addr < ADDR_HRAM_START) {
+    if (addr < ADDR_HRAM_START)
+    {
         // Joypad register (0xFF00) - only bits 4-5 are writable
-        if (addr == IO_JOYPAD) {
+        if (addr == IO_JOYPAD)
+        {
             io[0] = (value & 0x30) | 0xC0; // Keep only bits 4-5, set bits 6-7
         }
         // Serial transfer control (0xFF02)
@@ -302,9 +359,11 @@ void Memory::write(uint16_t addr, uint8_t value) {
         // Only auto-complete when using internal clock (master mode, 0x81).
         // External clock (slave, 0x80) requires a real linked partner to clock the transfer;
         // without one it stalls forever — completing it would fake a second Game Boy.
-        else if (addr == IO_SC) {
+        else if (addr == IO_SC)
+        {
             io[0x02] = value;
-            if ((value & 0x81) == 0x81) { // Transfer start + internal clock
+            if ((value & 0x81) == 0x81)
+            { // Transfer start + internal clock
                 char c = static_cast<char>(io[0x01]);
                 putchar(c);
                 fflush(stdout);
@@ -313,43 +372,51 @@ void Memory::write(uint16_t addr, uint8_t value) {
             }
         }
         // DIV register (0xFF04): any write resets the internal counter
-        else if (addr == IO_DIV) {
+        else if (addr == IO_DIV)
+        {
             div_counter = 0;
             io[0x04] = 0;
         }
-        else if (addr == IO_LCDC) {
+        else if (addr == IO_LCDC)
+        {
             io[0x40] = value;
         }
         // DMA transfer (0xFF46) - OAM DMA
-        else if (addr == IO_DMA) {
+        else if (addr == IO_DMA)
+        {
             // DMA copies 160 bytes from XX00-XX9F to FE00-FE9F
             uint16_t source = value * 0x100;
-            for (int i = 0; i < OAM_DMA_LENGTH; i++) {
+            for (int i = 0; i < OAM_DMA_LENGTH; i++)
+            {
                 oam[i] = read(source + i);
             }
             io[0x46] = value;
         }
 
         // Audio Registers: 0xFF10 - 0xFF26
-        else if (addr >= 0xFF10 && addr <= 0xFF26) {
+        else if (addr >= 0xFF10 && addr <= 0xFF26)
+        {
             io[addr - 0xFF00] = value; // Update the register file first
             if (apu) apu->on_register_write(addr, value); // Trigger APU logic
            
         }
 
         // Wave RAM: 0xFF30 - 0xFF3F
-        else if (addr >= 0xFF30 && addr <= 0xFF3F) {
+        else if (addr >= 0xFF30 && addr <= 0xFF3F)
+        {
             io[addr - 0xFF00] = value;
             if (apu) apu->on_wave_ram_write(addr - 0xFF30, value);
         }
-        else {
+        else
+        {
             io[addr - ADDR_IO_START] = value;
         }
         return;
     }
     
     // High RAM: $FF80-$FFFE
-    if (addr < IO_IE) {
+    if (addr < IO_IE)
+    {
         hram[addr - ADDR_HRAM_START] = value;
         return;
     }
@@ -358,39 +425,47 @@ void Memory::write(uint16_t addr, uint8_t value) {
     ie_register = value;
 }
 
-uint16_t Memory::read_word(uint16_t addr) const {
+uint16_t Memory::read_word(uint16_t addr) const
+{
     uint8_t low = read(addr);
     uint8_t high = read(addr + 1);
     return (high << 8) | low;
 }
 
-void Memory::write_word(uint16_t addr, uint16_t value) {
+void Memory::write_word(uint16_t addr, uint16_t value)
+{
     write(addr, value & 0xFF);
     write(addr + 1, (value >> 8) & 0xFF);
 }
 
-void Memory::tick_timers(int cycles) {
+void Memory::tick_timers(int cycles)
+{
     // Update DIV (internal 16-bit counter, upper byte exposed at 0xFF04)
     div_counter = (div_counter + cycles);
     io[0x04] = static_cast<uint8_t>(div_counter >> 8);
 
     // Update TIMA if timer is enabled (TAC bit 2)
     uint8_t tac = io[0x07];
-    if ((tac & 0x04)) {
+    if ((tac & 0x04))
+    {
 
         // TIMA increment thresholds (CPU cycles per tick)
         static const uint16_t tima_thresholds[4] = {1024, 16, 64, 256};
         uint16_t threshold = tima_thresholds[tac & 0x03];
 
         tima_cycles += cycles;
-        while (tima_cycles >= threshold) {
+        while (tima_cycles >= threshold)
+        {
             tima_cycles -= threshold;
             uint8_t tima = io[0x05];
             tima++;
-            if (tima == 0) {
+            if (tima == 0)
+            {
                 io[0x05] = io[0x06]; // Reset TIMA to TMA
                 io[0x0F] |= INT_TIMER;   // Request timer interrupt
-            } else {
+            }
+            else
+            {
                 io[0x05] = tima;
             }
         }
@@ -399,7 +474,8 @@ void Memory::tick_timers(int cycles) {
     mbc.tick_rtc(cycles);
 }
 
-void MBC::advance_rtc(int64_t seconds) {
+void MBC::advance_rtc(int64_t seconds)
+{
     if (rtc[4] & 0x40) return; // RTC halted, don't advance
 
     int64_t s = rtc[0] + seconds;
@@ -410,7 +486,8 @@ void MBC::advance_rtc(int64_t seconds) {
     rtc[2] = h % 24;
     uint16_t day = rtc[3] | ((rtc[4] & 0x01) << 8);
     day += static_cast<uint16_t>(h / 24);
-    if (day >= 512) {
+    if (day >= 512)
+    {
         day %= 512;
         rtc[4] |= 0x80; // Set day carry flag
     }
@@ -418,24 +495,32 @@ void MBC::advance_rtc(int64_t seconds) {
     rtc[4] = (rtc[4] & 0xFE) | ((day >> 8) & 0x01);
 }
 
-void MBC::tick_rtc(int cycles) {
-    if(type == MBCType::MBC3) {
-        if(rtc[4] & 0x40) { // RTC halted
+void MBC::tick_rtc(int cycles)
+{
+    if (type == MBCType::MBC3)
+    {
+        if (rtc[4] & 0x40)
+        { // RTC halted
             return;
         }
         rtc_cycles += cycles;
-        if(rtc_cycles >= CPU_FREQUENCY) {
+        if (rtc_cycles >= CPU_FREQUENCY)
+        {
             rtc_cycles -= CPU_FREQUENCY;
             //Increment rtc seconds
-            if(++rtc[0] == 60) {
+            if (++rtc[0] == 60)
+            {
                 rtc[0] = 0;
-                if(++rtc[1] == 60) {
+                if (++rtc[1] == 60)
+                {
                     rtc[1] = 0;
-                    if(++rtc[2] == 24) {
+                    if (++rtc[2] == 24)
+                    {
                         rtc[2] = 0;
                         uint16_t day = rtc[3] | ((rtc[4] & 0x01) << 8);
                         day++;
-                        if(day >= 512) {
+                        if (day >= 512)
+                        {
                             day = 0;
                             rtc[4] |= 0x80; // Set day carry flag
                         }
@@ -448,13 +533,16 @@ void MBC::tick_rtc(int cycles) {
     }
 }
 
-void Memory::save_battery(const std::string& rom_path) {
+void Memory::save_battery(const std::string& rom_path)
+{
     if (!has_battery || ext_ram.empty()) return;
     std::string save_path = rom_path.find_last_of('.') != std::string::npos ? rom_path.substr(0, rom_path.find_last_of('.')) + ".sav" : rom_path + ".sav";
     FILE* file = fopen(save_path.c_str(), "wb");
-    if (file) {
+    if (file)
+    {
         fwrite(ext_ram.data(), 1, ext_ram.size(), file);
-        if (has_rtc) {
+        if (has_rtc)
+        {
             fwrite(mbc.rtc, 1, 5, file);
             int64_t now = static_cast<int64_t>(time(nullptr));
             fwrite(&now, sizeof(now), 1, file);
@@ -463,22 +551,27 @@ void Memory::save_battery(const std::string& rom_path) {
     }
 }
 
-void Memory::load_battery(const std::string& rom_path) {
+void Memory::load_battery(const std::string& rom_path)
+{
     if (!has_battery) return;
     std::string save_path = rom_path.find_last_of('.') != std::string::npos ? rom_path.substr(0, rom_path.find_last_of('.')) + ".sav" : rom_path + ".sav";
     FILE* file = fopen(save_path.c_str(), "rb");
-    if (file) {
+    if (file)
+    {
         fseek(file, 0, SEEK_END);
         long file_size = ftell(file);
         fseek(file, 0, SEEK_SET);
         fread(ext_ram.data(), 1, ext_ram.size(), file);
-        if (has_rtc && file_size >= (long)(ext_ram.size() + 5)) {
+        if (has_rtc && file_size >= (long)(ext_ram.size() + 5))
+        {
             fread(mbc.rtc, 1, 5, file);
-            if (file_size >= (long)(ext_ram.size() + 5 + sizeof(int64_t))) {
+            if (file_size >= (long)(ext_ram.size() + 5 + sizeof(int64_t)))
+            {
                 int64_t saved_time = 0;
                 fread(&saved_time, sizeof(saved_time), 1, file);
                 int64_t elapsed = static_cast<int64_t>(time(nullptr)) - saved_time;
-                if (elapsed > 0) {
+                if (elapsed > 0)
+                {
                     mbc.advance_rtc(elapsed);
                 }
             }

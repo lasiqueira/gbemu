@@ -3,27 +3,33 @@
 #include "constants.h"
 
 
-void APU::step(int cycles, Memory& memory) {
+void APU::step(int cycles, Memory& memory)
+{
      
-    if(channel1.enabled) {
+    if (channel1.enabled)
+    {
         channel1.period_timer -= cycles;
-        while(channel1.period_timer <= 0) {
+        while (channel1.period_timer <= 0)
+        {
             channel1.period_timer += (2048 - channel1.period_value) * 4;
             channel1.duty_pos = (channel1.duty_pos + 1) & 7;
         }
     }
 
-    if(channel2.enabled) {
+    if (channel2.enabled)
+    {
         channel2.period_timer -= cycles;
-        while(channel2.period_timer <= 0) {
+        while (channel2.period_timer <= 0)
+        {
             channel2.period_timer += (2048 - channel2.period_value) * 4;
             channel2.duty_pos = (channel2.duty_pos + 1) & 7;
         }
     }
 
-    sample_counter += static_cast<float>(cycles);
-    while(sample_counter >= CYCLES_PER_SAMPLE) {
-        sample_counter -= CYCLES_PER_SAMPLE;
+    sample_counter += cycles * SAMPLE_RATE;
+    while (sample_counter >= static_cast<uint32_t>(CPU_FREQUENCY))
+    {
+        sample_counter -= CPU_FREQUENCY;
         
         int ch1_sample = channel1.sample();
         int ch2_sample = channel2.sample();
@@ -39,75 +45,92 @@ void APU::step(int cycles, Memory& memory) {
         sample_buffer.push_back(static_cast<int16_t>(right * scaling_factor)); // Right channel sample.
 
     }
-    if(!master_enabled) {
+    if (!master_enabled)
+    {
         return; // APU is disabled, do nothing
     }
 
     cycle_counter += cycles;
 
     // Frame sequencer: 8 steps cycling at 512 Hz = one step every 8192 cycles
-    while (cycle_counter >= 8192) {
+    while (cycle_counter >= 8192)
+    {
         cycle_counter -= 8192;
         frame_seq_step(); // advances internal step 0→1→2→...→7→0
     }
 }
 
-void APU::on_register_write(uint16_t addr, uint8_t value) {
-    switch(addr) {
+void APU::on_register_write(uint16_t addr, uint8_t value)
+{
+    switch (addr)
+    {
         // APU level registers
-        case IO_NR52: {
+        case IO_NR52:
+        {
             bool powered = value & 0x80;
-            if(!powered) {
+            if (!powered)
+            {
                 master_enabled = false;
                 channel1 = {};
                 channel2 = {};
                 channel3 = {};
                 channel4 = {};
-            } else {
+            }
+            else
+            {
                 master_enabled = true;
             }
         }  break;
         
-        case IO_NR51: {
+        case IO_NR51:
+        {
              nr51 = value;           
         } break;
         
-        case IO_NR50: {
+        case IO_NR50:
+        {
             nr50 = value;
         } break;
 
         // Channel 1 Sweep register
-        case IO_NR10: {
+        case IO_NR10:
+        {
             channel1.sweep_pace = (value >> 4) & 0x07;
             channel1.sweep_negate = (value & 0x08) != 0;
             channel1.sweep_step = value & 0x07;
         } break;
 
-        case IO_NR11: {
+        case IO_NR11:
+        {
             channel1.duty = (value >> 6) & 0x03;
             channel1.length_value = value & 0x3F;
         } break;
 
-        case IO_NR12: {
+        case IO_NR12:
+        {
             channel1.envelope.initial_vol = (value >> 4) & 0x0F;
             channel1.dac_enabled = (value & 0xF8) != 0;
-            if(!channel1.dac_enabled) {
+            if (!channel1.dac_enabled)
+            {
                 channel1.enabled = false;
             }
             channel1.envelope.env_add = (value & 0x08) != 0;
             channel1.envelope.env_pace = value & 0x07;
         } break;
 
-        case IO_NR13: {
+        case IO_NR13:
+        {
             channel1.period_value = (channel1.period_value & 0x0700) | value;
         } break;
 
-        case IO_NR14: {
+        case IO_NR14:
+        {
             channel1.period_value = (channel1.period_value & 0x00FF) | ((value & 0x07) << 8);
             channel1.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
-            if(trigger) {
-                if(channel1.dac_enabled) channel1.enabled = true;
+            if (trigger)
+            {
+                if (channel1.dac_enabled) channel1.enabled = true;
                 channel1.period_timer = (2048 - channel1.period_value) * 4; // Timer counts down every 4 cycles
                 channel1.envelope.current_vol = channel1.envelope.initial_vol;
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
@@ -115,39 +138,46 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
                 channel1.shadow_period = channel1.period_value; // Initialize shadow period for sweep
                 channel1.sweep_counter = (channel1.sweep_pace == 0) ? 8 : channel1.sweep_pace; // Reset sweep counter
                 channel1.sweep_enabled = (channel1.sweep_pace != 0) || (channel1.sweep_step != 0); // Enable sweep if pace or step is non-zero
-                if(channel1.length_counter == 0) {
+                if (channel1.length_counter == 0)
+                {
                     channel1.length_counter = 64 - channel1.length_value; // Length counter is 64 - NR11 value
                 }
             }
         } break;
 
         // Channel 2 registers
-         case IO_NR21: {
+         case IO_NR21:
+        {
             channel2.duty = (value >> 6) & 0x03;
             channel2.length_value = value & 0x3F;
         } break;
 
-        case IO_NR22: {
+        case IO_NR22:
+        {
             channel2.envelope.initial_vol = (value >> 4) & 0x0F;
             channel2.dac_enabled = (value & 0xF8) != 0;
-            if(!channel2.dac_enabled) {
+            if (!channel2.dac_enabled)
+            {
                 channel2.enabled = false;
             }
             channel2.envelope.env_add = (value & 0x08) != 0;
             channel2.envelope.env_pace = value & 0x07;
         } break;
 
-        case IO_NR23: {
+        case IO_NR23:
+        {
             channel2.period_value = (channel2.period_value & 0x0700) | value;
         } break;
 
-        case IO_NR24: {
+        case IO_NR24:
+        {
             channel2.period_value = (channel2.period_value & 0x00FF) | ((value & 0x07) << 8);
             channel2.length_enabled = (value & 0x40) != 0;
 
             bool trigger = (value & 0x80) != 0;
-            if(trigger) {
-                if(channel2.dac_enabled) channel2.enabled = true;
+            if (trigger)
+            {
+                if (channel2.dac_enabled) channel2.enabled = true;
                 channel2.period_timer = (2048 - channel2.period_value) * 4; // Timer counts down every 4 cycles
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
                 channel2.envelope.env_counter = channel2.envelope.env_pace;
@@ -155,70 +185,85 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
         } break;
 
         // Channel 3 registers
-        case IO_NR30: {
+        case IO_NR30:
+        {
             channel3.dac_enabled = (value & 0x80) != 0;
-            if(!channel3.dac_enabled) {
+            if (!channel3.dac_enabled)
+            {
                 channel3.enabled = false;
             }
         } break;
 
-        case IO_NR31: {
+        case IO_NR31:
+        {
             channel3.length_value = value;
         } break;
 
-        case IO_NR32: {
+        case IO_NR32:
+        {
             channel3.volume = (value >> 5) & 0x03;
         } break;
 
-        case IO_NR33: {
+        case IO_NR33:
+        {
             channel3.period_value = (channel3.period_value & 0x0700) | value;
         } break;
 
-        case IO_NR34: {
+        case IO_NR34:
+        {
             channel3.period_value = (channel3.period_value & 0x00FF) | ((value & 0x07) << 8);
             channel3.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
-            if(trigger) {
-                if(channel3.dac_enabled) channel3.enabled = true;
+            if (trigger)
+            {
+                if (channel3.dac_enabled) channel3.enabled = true;
                 channel3.period_timer = (2048 - channel3.period_value) * 2; // Timer counts down every 2 cycles
                 channel3.wave_pos = 0; // Reset wave position
-                if(channel3.length_counter == 0) {
+                if (channel3.length_counter == 0)
+                {
                     channel3.length_counter = 256 - channel3.length_value; // Length counter is 256 - NR31 value
                 }
             }
         } break;
 
         // Channel 4 registers
-        case IO_NR41: {
+        case IO_NR41:
+        {
             channel4.length_value = value & 0x3F;
         } break;
 
-        case IO_NR42: {
+        case IO_NR42:
+        {
             channel4.envelope.initial_vol = (value >> 4) & 0x0F;
             channel4.dac_enabled = (value & 0xF8) != 0;
-            if(!channel4.dac_enabled) {
+            if (!channel4.dac_enabled)
+            {
                 channel4.enabled = false;
             }
             channel4.envelope.env_add = (value & 0x08) != 0;
             channel4.envelope.env_pace = value & 0x07;
         } break;
 
-        case IO_NR43: {
+        case IO_NR43:
+        {
             channel4.clock_div = value & 0x07;
             channel4.clock_shift = (value >> 4) & 0x0F;
             channel4.lfsr_width = (value & 0x08) ? 7 : 15; // Bit 3 determines LFSR width
         } break;
 
-        case IO_NR44: {
+        case IO_NR44:
+        {
             channel4.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
-            if(trigger) {
-                if(channel4.dac_enabled) channel4.enabled = true;
+            if (trigger)
+            {
+                if (channel4.dac_enabled) channel4.enabled = true;
                 channel4.envelope.env_counter = channel4.envelope.env_pace;
                 channel4.envelope.current_vol = channel4.envelope.initial_vol;
                 channel4.lfsr = 0x7FFF; // Reset LFSR to all 1s
                 channel4.period_timer = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16) << channel4.clock_shift;
-                if(channel4.length_counter == 0) {
+                if (channel4.length_counter == 0)
+                {
                     channel4.length_counter = 64 - channel4.length_value; // Length counter is 64 - NR41 value
                 }
             }
@@ -228,16 +273,19 @@ void APU::on_register_write(uint16_t addr, uint8_t value) {
     }
 }
 
-uint8_t APU::on_register_read(uint16_t addr) {
-    switch(addr) {
+uint8_t APU::on_register_read(uint16_t addr)
+{
+    switch (addr)
+    {
         // APU level registers
-        case IO_NR52: {
+        case IO_NR52:
+        {
             uint8_t val = 0;
-            if(master_enabled) val |= 0x80;
-            if(channel1.enabled) val |= 0x01;
-            if(channel2.enabled) val |= 0x02;
-            if(channel3.enabled) val |= 0x04;
-            if(channel4.enabled) val |= 0x08;
+            if (master_enabled) val |= 0x80;
+            if (channel1.enabled) val |= 0x01;
+            if (channel2.enabled) val |= 0x02;
+            if (channel3.enabled) val |= 0x04;
+            if (channel4.enabled) val |= 0x08;
             val |= 0x70; // Bits 4-6 are always read as 1
             return val;
         }
@@ -275,9 +323,11 @@ uint8_t APU::on_register_read(uint16_t addr) {
     return 0xFF;
 }
 
-void APU::frame_seq_step() {
+void APU::frame_seq_step()
+{
     
-    switch (frame_seq_counter) {
+    switch (frame_seq_counter)
+    {
         case 0: clock_length(); break;
         case 2: clock_length(); clock_sweep(); break;
         case 4: clock_length(); break;
@@ -288,30 +338,37 @@ void APU::frame_seq_step() {
     frame_seq_counter = (frame_seq_counter + 1) % 8;
 }
 
-void APU::on_wave_ram_write(uint16_t offset, uint8_t value) {
-    if (offset < 16) {
+void APU::on_wave_ram_write(uint16_t offset, uint8_t value)
+{
+    if (offset < 16)
+    {
         wave_ram[offset] = value;
     }
 }
 
-void Channel::clock_length() {
-    if (length_enabled && length_counter > 0) {
+void Channel::clock_length()
+{
+    if (length_enabled && length_counter > 0)
+    {
         if (--length_counter == 0) enabled = false;
     }
 }
 
-void APU::clock_length() {
+void APU::clock_length()
+{
     channel1.clock_length();
     channel2.clock_length();
     channel3.clock_length();
     channel4.clock_length();
 }
 
-void APU::clock_sweep() {
+void APU::clock_sweep()
+{
     //TODO
 }
 
-void APU::clock_envelope() {
+void APU::clock_envelope()
+{
     //TODO
 }
 
@@ -323,8 +380,9 @@ static constexpr uint8_t DUTY_TABLE[4] = {
     0b11111100  // 75% duty
 };
 
-int SquareChannel::sample() const {
-    if(!enabled || !dac_enabled) return 0;
+int SquareChannel::sample() const
+{
+    if (!enabled || !dac_enabled) return 0;
     bool high = (DUTY_TABLE[duty] >> duty_pos) & 1;
         return high ? envelope.current_vol : 0;
 }
