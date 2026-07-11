@@ -185,16 +185,16 @@ uint8_t Memory::read(uint16_t addr) const
         }
 
         // Audio registers: $FF10-$FF26
-        if (addr >= 0xFF10 && addr <= 0xFF26)
+        if (addr >= IO_NR10 && addr <= IO_NR52)
         {
             if (apu) return apu->on_register_read(addr);
-            return io[addr - 0xFF00];
+            return io[addr - ADDR_IO_START];
         }
         
         // Wave RAM: 0xFF30 - 0xFF3F
-        if (addr >= 0xFF30 && addr <= 0xFF3F)
+        if (addr >= IO_WAVE_RAM_START && addr <= IO_WAVE_RAM_END)
         {
-            return io[addr - 0xFF00];
+            return io[addr - ADDR_IO_START];
         }
 
         return io[addr - ADDR_IO_START];
@@ -217,7 +217,7 @@ void Memory::write(uint16_t addr, uint8_t value)
     if (addr < MBC_RAM_ENABLE_END)
     {
         if (mbc.type == MBCType::MBC2 && (addr & 0x100)) return; // bit 8 set = not RAM enable
-        mbc.ram_enabled = (value & 0x0F) == 0x0A; // 0x0A enables RAM, any other value disables it
+        mbc.ram_enabled = (value & 0x0F) == MBC_RAM_ENABLE; // 0x0A enables RAM, any other value disables it
         return;
     }
     
@@ -242,7 +242,7 @@ void Memory::write(uint16_t addr, uint8_t value)
                 if (mbc.rom_bank == 0) mbc.rom_bank = 1;
                 break;
             case MBCType::MBC5:
-                if (addr < 0x3000)
+                if (addr < MBC5_ROM_HIGH_ADDR)
                 {
                     mbc.rom_bank = (mbc.rom_bank & 0x100) | value; // low 8 bits
                 }

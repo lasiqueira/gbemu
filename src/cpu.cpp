@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "constants.h"
 #include "memory.h"
 #include "disassembler.h"
 #include <print>
@@ -6,8 +7,8 @@
 CPU::CPU()
 {
     // Initialize registers to post-boot state (skipping boot ROM)
-    pc = 0x0100; // Game starts at 0x0100
-    sp = 0xFFFE;
+    pc = CPU_INITIAL_PC; // Game starts at 0x0100
+    sp = CPU_INITIAL_SP; // Initial stack pointer value
     
     // Post-boot register values
     af.pair = 0x01B0; // A=0x01, F=0xB0 (Z=1, N=0, H=1, C=1)
@@ -144,11 +145,11 @@ int CPU::ldh(Memory& memory, uint8_t offset, bool to_memory, int length, int cyc
 {
     if (to_memory)
     {
-        memory.write(0xFF00 + offset, af.high);
+        memory.write(ADDR_IO_START + offset, af.high);
     }
     else
     {
-        af.high = memory.read(0xFF00 + offset);
+        af.high = memory.read(ADDR_IO_START + offset);
     }
     pc += length; // Move past the instruction and operands
     return cycles; // Return the cycle count

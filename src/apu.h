@@ -2,6 +2,42 @@
 #include <cstdint>
 #include <vector>
 
+// APU timing and audio constants
+constexpr int AUDIO_SAMPLE_RATE = 44100;
+constexpr int APU_PERIOD_MAX = 2048; // Max period value for square/wave channels (2048 = 0x800)
+constexpr int FRAME_SEQ_CYCLES = 8192; // 8192 cycles per frame sequencer step (512 Hz)
+constexpr int AUDIO_SAMPLE_SCALING = 1092; // 4-bit volume → 16-bit signed scale
+constexpr uint16_t APU_LFSR_INIT = 0x7FFF; // Initial value for 15-bit LFSR in noise channel
+
+// I/O AUDIO Register Addresses
+constexpr uint16_t IO_NR10   = 0xFF10; // Channel 1 Sweep
+constexpr uint16_t IO_NR11   = 0xFF11; // Channel 1 length timer & duty cycle
+constexpr uint16_t IO_NR12   = 0xFF12; // Channel 1 volume & envelope
+constexpr uint16_t IO_NR13   = 0xFF13; // Channel 1 period low [write-only]
+constexpr uint16_t IO_NR14   = 0xFF14; // Channel 1 period high & control
+
+constexpr uint16_t IO_NR21   = 0xFF16; // Channel 2 length timer & duty cycle
+constexpr uint16_t IO_NR22   = 0xFF17; // Channel 2 volume & envelope
+constexpr uint16_t IO_NR23   = 0xFF18; // Channel 2 period low [write-only]
+constexpr uint16_t IO_NR24   = 0xFF19; // Channel 2 period high & control
+
+constexpr uint16_t IO_NR30   = 0xFF1A; // Channel 3 DAC enable
+constexpr uint16_t IO_NR31   = 0xFF1B; // Channel 3 length timer [write-only]
+constexpr uint16_t IO_NR32   = 0xFF1C; // Channel 3 output level
+constexpr uint16_t IO_NR33   = 0xFF1D; // Channel 3 period low [write-only]
+constexpr uint16_t IO_NR34   = 0xFF1E; // Channel 3 period high & control
+constexpr uint16_t IO_WAVE_RAM_START = 0xFF30; // Channel 3 wave pattern RAM (0xFF30-0xFF3F)
+constexpr uint16_t IO_WAVE_RAM_END   = 0xFF3F; // End of Channel 3 wave pattern RAM
+
+constexpr uint16_t IO_NR41   = 0xFF20; // Channel 4 length timer [write-only]
+constexpr uint16_t IO_NR42   = 0xFF21; // Channel 4 volume & envelope
+constexpr uint16_t IO_NR43   = 0xFF22; // Channel 4 frequency & randomness
+constexpr uint16_t IO_NR44   = 0xFF23; // Channel 4 control
+
+constexpr uint16_t IO_NR50   = 0xFF24; // Master volume & VIN panning
+constexpr uint16_t IO_NR51   = 0xFF25; // Sound panning
+constexpr uint16_t IO_NR52   = 0xFF26; // Audio master control
+
 struct Memory; // Forward declaration
 
 struct Channel

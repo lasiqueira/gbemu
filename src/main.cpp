@@ -11,6 +11,8 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 
+constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
+
 struct WindowLayout
 {
     int game_x = 0;
@@ -145,7 +147,7 @@ int init()
     SDL_AudioSpec spec{};
     spec.format = SDL_AUDIO_S16;
     spec.channels = 2;
-    spec.freq = 44100;
+    spec.freq = AUDIO_SAMPLE_RATE;
 
     // Open the default playback device
     audio_device = SDL_OpenAudioDevice(
@@ -241,7 +243,7 @@ void handle_input(SDL_Event& event)
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
     if (prev & ~joypad)
     {
-        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
+        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
 
@@ -289,7 +291,7 @@ void handle_gamepad_input(SDL_Event& event)
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
     if (prev & ~joypad)
     {
-        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
+        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
 
@@ -372,7 +374,7 @@ int main(int argc, char** argv)
     gameboy.running = true;
     
     // Frame timing for 60 FPS
-    const double target_frame_time = 1000.0 / 59.7; // Game Boy runs at ~59.7 Hz
+    const double target_frame_time = 1000.0 / FRAME_RATE; // Game Boy runs at ~59.7 Hz
     
     while (!quit && gameboy.running)
     {

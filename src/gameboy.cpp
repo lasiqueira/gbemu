@@ -52,7 +52,7 @@ int GameBoy::step_frame()
         // Check for wake from HALT/STOP
         uint8_t if_reg = memory.read(IO_IF);
         uint8_t ie_reg = memory.read(IO_IE);
-        uint8_t pending = if_reg & ie_reg & 0x1F;
+        uint8_t pending = if_reg & ie_reg & INT_ALL_MASK;
         
         if (cpu.halted && pending)
         {
@@ -102,7 +102,7 @@ void GameBoy::handle_interrupts()
     
     uint8_t if_reg = memory.read(IO_IF);
     uint8_t ie_reg = memory.read(IO_IE);
-    uint8_t triggered = if_reg & ie_reg & 0x1F; // Check which interrupts are both flagged and enabled
+    uint8_t triggered = if_reg & ie_reg & INT_ALL_MASK; // Check which interrupts are both flagged and enabled
     
     if (triggered == 0)
     {

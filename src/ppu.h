@@ -15,6 +15,7 @@ constexpr int MODE_3_CYCLES = 172;  // Drawing pixels
 constexpr int MODE_0_CYCLES = 204;  // H-Blank
 constexpr int SCANLINE_CYCLES = 456; // Total cycles per scanline
 constexpr int VBLANK_SCANLINES = 10; // Scanlines in V-Blank
+constexpr int SCANLINES_PER_FRAME = 154; // 154 scanlines per frame
 
 // LCD Control (LCDC) register bits
 constexpr uint8_t LCDC_ENABLE = 0x80;        // Bit 7: LCD/PPU Enable
@@ -43,6 +44,20 @@ constexpr uint8_t SPRITE_PRIORITY = 0x80; // Bit 7: Sprite-to-background priorit
 constexpr uint8_t SPRITE_FLIP_Y = 0x40;   // Bit 6: Y flip
 constexpr uint8_t SPRITE_FLIP_X = 0x20;   // Bit 5: X flip
 constexpr uint8_t SPRITE_PALETTE = 0x10;   // Bit 4: Palette number (0=OBP0, 1=OBP1)
+
+// Background and tile rendering
+constexpr int TILE_MAP_COLS = 32; // Tile map width in tiles
+constexpr int BYTES_PER_TILE = 16; // Each tile is 16 bytes (8x8 pixels, 2 bits per pixel)
+constexpr uint8_t WINDOW_X_OFFSET = 7; // Window X position is offset by 7 pixels
+constexpr uint16_t TILE_DATA_BASE_UNSIGNED = 0x8000; // Base address for unsigned tile data
+constexpr uint16_t TILE_DATA_BASE_SIGNED = 0x8800;   // Base address for signed tile data
+constexpr uint16_t TILE_MAP_BASE_0 = 0x9800; // Base address for tile map 0
+constexpr uint16_t TILE_MAP_BASE_1 = 0x9C00; // Base address for tile map 1
+
+// Sprite rendering offsets
+constexpr uint8_t SPRITE_Y_OFFSET = 16; // Sprite Y position is offset by 16 pixels
+constexpr uint8_t SPRITE_X_OFFSET = 8;  // Sprite X position is offset by 8 pixels
+constexpr uint8_t ALPHA_OPAQUE = 255; // Alpha value for opaque pixels
 
 // Sprite/Object data for rendering
 struct Sprite

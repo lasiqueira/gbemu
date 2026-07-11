@@ -11,7 +11,7 @@ void APU::step(int cycles, Memory& memory)
         channel1.period_timer -= cycles;
         while (channel1.period_timer <= 0)
         {
-            channel1.period_timer += (2048 - channel1.period_value) * 4;
+            channel1.period_timer += (APU_PERIOD_MAX - channel1.period_value) * 4;
             channel1.duty_pos = (channel1.duty_pos + 1) & 7;
         }
     }
@@ -21,12 +21,12 @@ void APU::step(int cycles, Memory& memory)
         channel2.period_timer -= cycles;
         while (channel2.period_timer <= 0)
         {
-            channel2.period_timer += (2048 - channel2.period_value) * 4;
+            channel2.period_timer += (APU_PERIOD_MAX - channel2.period_value) * 4;
             channel2.duty_pos = (channel2.duty_pos + 1) & 7;
         }
     }
 
-    sample_counter += cycles * SAMPLE_RATE;
+    sample_counter += cycles * AUDIO_SAMPLE_RATE;
     while (sample_counter >= static_cast<uint32_t>(CPU_FREQUENCY))
     {
         sample_counter -= CPU_FREQUENCY;
@@ -40,9 +40,8 @@ void APU::step(int cycles, Memory& memory)
         int right = ((nr51 & 0x01) ? ch1_sample : 0) + ((nr51 & 0x02) ? ch2_sample : 0);
 
         // 1092 is a scaling factor to convert 4-bit volume (0-15) to 16-bit signed sample range (-32768 to 32767)
-        int scaling_factor = 1092; // 32767 / 15 ≈ 2184, but we use 1092 to avoid clipping when both channels are at max volume
-        sample_buffer.push_back(static_cast<int16_t>(left * scaling_factor)); // Left channel sample. 
-        sample_buffer.push_back(static_cast<int16_t>(right * scaling_factor)); // Right channel sample.
+        sample_buffer.push_back(static_cast<int16_t>(left * AUDIO_SAMPLE_SCALING)); // Left channel sample. 
+        sample_buffer.push_back(static_cast<int16_t>(right * AUDIO_SAMPLE_SCALING)); // Right channel sample.
 
     }
     if (!master_enabled)
@@ -53,9 +52,9 @@ void APU::step(int cycles, Memory& memory)
     cycle_counter += cycles;
 
     // Frame sequencer: 8 steps cycling at 512 Hz = one step every 8192 cycles
-    while (cycle_counter >= 8192)
+    while (cycle_counter >= FRAME_SEQ_CYCLES)
     {
-        cycle_counter -= 8192;
+        cycle_counter -= FRAME_SEQ_CYCLES;
         frame_seq_step(); // advances internal step 0→1→2→...→7→0
     }
 }
@@ -131,7 +130,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             if (trigger)
             {
                 if (channel1.dac_enabled) channel1.enabled = true;
-                channel1.period_timer = (2048 - channel1.period_value) * 4; // Timer counts down every 4 cycles
+                channel1.period_timer = (APU_PERIOD_MAX - channel1.period_value) * 4; // Timer counts down every 4 cycles
                 channel1.envelope.current_vol = channel1.envelope.initial_vol;
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
 
@@ -178,7 +177,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             if (trigger)
             {
                 if (channel2.dac_enabled) channel2.enabled = true;
-                channel2.period_timer = (2048 - channel2.period_value) * 4; // Timer counts down every 4 cycles
+                channel2.period_timer = (APU_PERIOD_MAX - channel2.period_value) * 4; // Timer counts down every 4 cycles
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
                 channel2.envelope.env_counter = channel2.envelope.env_pace;
             }
@@ -217,7 +216,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             if (trigger)
             {
                 if (channel3.dac_enabled) channel3.enabled = true;
-                channel3.period_timer = (2048 - channel3.period_value) * 2; // Timer counts down every 2 cycles
+                channel3.period_timer = (APU_PERIOD_MAX - channel3.period_value) * 2; // Timer counts down every 2 cycles
                 channel3.wave_pos = 0; // Reset wave position
                 if (channel3.length_counter == 0)
                 {
@@ -260,7 +259,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 if (channel4.dac_enabled) channel4.enabled = true;
                 channel4.envelope.env_counter = channel4.envelope.env_pace;
                 channel4.envelope.current_vol = channel4.envelope.initial_vol;
-                channel4.lfsr = 0x7FFF; // Reset LFSR to all 1s
+                channel4.lfsr = APU_LFSR_INIT; // Reset LFSR to all 1s
                 channel4.period_timer = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16) << channel4.clock_shift;
                 if (channel4.length_counter == 0)
                 {

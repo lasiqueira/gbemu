@@ -108,7 +108,7 @@ void PPU::step(int cycles, Memory& memory)
                 }
                 memory.write(IO_STAT, stat);
                 
-                if (scanline > 153)
+                if (scanline >= SCANLINES_PER_FRAME)
                 {
                     // Start new frame
                     scanline = 0;
@@ -148,12 +148,12 @@ void PPU::render_scanline(Memory& memory)
     bool window_visible_this_line = window_enabled && (scanline >= wy);
 
     // Determine tile map and tile data addresses
-    uint16_t tile_data_base = (lcdc & LCDC_TILE_DATA) ? 0x8000 : 0x8800;
+    uint16_t tile_data_base = (lcdc & LCDC_TILE_DATA) ? TILE_DATA_BASE_UNSIGNED : TILE_DATA_BASE_SIGNED;
     bool signed_tile_ids = !(lcdc & LCDC_TILE_DATA);
 
     // determine tile maps
-    uint16_t bg_tile_map = (lcdc & LCDC_BG_MAP) ? 0x9C00 : 0x9800;
-    uint16_t window_tile_map = (lcdc & LCDC_WINDOW_MAP) ? 0x9C00 : 0x9800;
+    uint16_t bg_tile_map = (lcdc & LCDC_BG_MAP) ? TILE_MAP_BASE_1 : TILE_MAP_BASE_0;
+    uint16_t window_tile_map = (lcdc & LCDC_WINDOW_MAP) ? TILE_MAP_BASE_1 : TILE_MAP_BASE_0;
 
     bool window_rendered_this_line = false;
     
@@ -162,10 +162,10 @@ void PPU::render_scanline(Memory& memory)
     {
         uint8_t bg_color;
         
-        bool draw_window = window_visible_this_line && (x >= (wx - 7));
+        bool draw_window = window_visible_this_line && (x >= (wx - WINDOW_X_OFFSET));
         if(draw_window)
         {
-            uint8_t pixel_x = x - (wx - 7);
+            uint8_t pixel_x = x - (wx - WINDOW_X_OFFSET);
             uint8_t pixel_y = window_line_counter;
 
             bg_color = get_tile_pixel(
@@ -254,7 +254,7 @@ void PPU::update_rgba_buffer()
         rgba_buffer[i * 4 + 0] = color.r;
         rgba_buffer[i * 4 + 1] = color.g;
         rgba_buffer[i * 4 + 2] = color.b;
-        rgba_buffer[i * 4 + 3] = 255; // Alpha
+        rgba_buffer[i * 4 + 3] = ALPHA_OPAQUE; // Alpha
     }
 }
 
@@ -301,7 +301,7 @@ uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_
    
     uint8_t tile_y = pixel_y / 8;
     uint8_t tile_x = pixel_x / 8;
-    uint16_t tile_map_addr = tile_map_base + tile_y * 32 + tile_x;
+    uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
     
     uint8_t tile_id = memory.read(tile_map_addr);
     
@@ -310,11 +310,11 @@ uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_
     if (signed_tile_ids)
     {
         int8_t signed_id = static_cast<int8_t>(tile_id);
-        tile_addr = tile_data_base + (signed_id + 128) * 16;
+        tile_addr = tile_data_base + (signed_id + 128) * BYTES_PER_TILE;
     }
     else
     {
-        tile_addr = tile_data_base + tile_id * 16;
+        tile_addr = tile_data_base + tile_id * BYTES_PER_TILE;
     }
     
     // Get pixel within tile
@@ -359,9 +359,9 @@ void PPU::scan_oam(Memory& memory)
         uint8_t tile = memory.read(sprite_addr + 2);
         uint8_t attributes = memory.read(sprite_addr + 3);
 
-        if(y == 0 || y >= 160) continue; // Sprite is off-screen vertically
+        if(y == 0 || y >= SCREEN_HEIGHT + SPRITE_Y_OFFSET) continue; // Sprite is off-screen vertically
 
-        int sprite_top = y - 16;
+        int sprite_top = y - SPRITE_Y_OFFSET; // Adjust for sprite offset
         int sprite_bottom = sprite_top + sprite_height;
 
         if(scanline >= sprite_top && scanline < sprite_bottom)
@@ -386,7 +386,7 @@ void PPU::scan_oam(Memory& memory)
 int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
 {
     // Calculate horizontal bounds of the sprite
-    int sprite_left = sprite.x - 8;
+    int sprite_left = sprite.x - SPRITE_X_OFFSET; // Adjust for sprite offset
     int sprite_right = sprite_left + 8;
 
     // Check if the pixel is within the horizontal bounds of the sprite
@@ -396,7 +396,7 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     }
     // Calculate vertical bounds of the sprite
     int pixel_x = screen_x - sprite_left;
-    int pixel_y = scanline - (sprite.y - 16);
+    int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET); // Adjust for sprite offset
 
     // Determine sprite height from IO_LCDC
     uint8_t lcdc = memory.read(IO_LCDC);
@@ -432,7 +432,7 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     }
 
     // Get tile data address
-    uint16_t tile_addr = 0x8000 + (tile_index * 16);
+    uint16_t tile_addr = ADDR_VRAM_START + (tile_index * BYTES_PER_TILE);
     // Each tile row is 2 bytes
     uint16_t tile_row_addr = tile_addr + (pixel_y * 2);
     uint8_t byte1 = memory.read(tile_row_addr);

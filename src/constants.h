@@ -5,12 +5,6 @@
 constexpr int CPU_FREQUENCY = 4194304;        // 4.194304 MHz (cycles per second)
 constexpr double FRAME_RATE = 59.7;           // ~59.7 Hz (frames per second)
 constexpr int CYCLES_PER_FRAME = static_cast<int>(CPU_FREQUENCY / FRAME_RATE);  // ~70224 cycles
-constexpr int   SAMPLE_RATE        = 44100;
-
-// LCD timing constants
-constexpr int CYCLES_PER_SCANLINE = 456; // 456 cycles per scanline
-constexpr int SCANLINES_PER_FRAME = 154; // 154 scanlines per frame
-constexpr int VBLANK_SCANLINE = 144; // V-Blank starts at scanline 144
 
 // I/O Register Addresses
 constexpr uint16_t IO_JOYPAD = 0xFF00; // Joypad
@@ -35,37 +29,6 @@ constexpr uint16_t IO_WY     = 0xFF4A; // Window Y Position
 constexpr uint16_t IO_WX     = 0xFF4B; // Window X Position
 constexpr uint16_t IO_IE     = 0xFFFF; // Interrupt Enable
 
-// I/O AUDIO Register Addresses
-constexpr uint16_t IO_NR10   = 0xFF10; // Channel 1 Sweep
-constexpr uint16_t IO_NR11   = 0xFF11; // Channel 1 length timer & duty cycle
-constexpr uint16_t IO_NR12   = 0xFF12; // Channel 1 volume & envelope
-constexpr uint16_t IO_NR13   = 0xFF13; // Channel 1 period low [write-only]
-constexpr uint16_t IO_NR14   = 0xFF14; // Channel 1 period high & control
-
-constexpr uint16_t IO_NR21   = 0xFF16; // Channel 2 length timer & duty cycle
-constexpr uint16_t IO_NR22   = 0xFF17; // Channel 2 volume & envelope
-constexpr uint16_t IO_NR23   = 0xFF18; // Channel 2 period low [write-only]
-constexpr uint16_t IO_NR24   = 0xFF19; // Channel 2 period high & control
-
-constexpr uint16_t IO_NR30   = 0xFF1A; // Channel 3 DAC enable
-constexpr uint16_t IO_NR31   = 0xFF1B; // Channel 3 length timer [write-only]
-constexpr uint16_t IO_NR32   = 0xFF1C; // Channel 3 output level
-constexpr uint16_t IO_NR33   = 0xFF1D; // Channel 3 period low [write-only]
-constexpr uint16_t IO_NR34   = 0xFF1E; // Channel 3 period high & control
-constexpr uint16_t IO_WAVE_RAM_START = 0xFF30; // Channel 3 wave pattern RAM (0xFF30-0xFF3F)
-constexpr uint16_t IO_WAVE_RAM_END   = 0xFF3F; // End of Channel 3 wave pattern RAM
-
-constexpr uint16_t IO_NR41   = 0xFF20; // Channel 4 length timer [write-only]
-constexpr uint16_t IO_NR42   = 0xFF21; // Channel 4 volume & envelope
-constexpr uint16_t IO_NR43   = 0xFF22; // Channel 4 frequency & randomness
-constexpr uint16_t IO_NR44   = 0xFF23; // Channel 4 control
-
-constexpr uint16_t IO_NR50   = 0xFF24; // Master volume & VIN panning
-constexpr uint16_t IO_NR51   = 0xFF25; // Sound panning
-constexpr uint16_t IO_NR52   = 0xFF26; // Audio master control
-
-
-
 // Memory map region boundaries
 constexpr uint16_t ADDR_ROM_BANK0_END  = 0x4000; // End of fixed ROM bank 0
 constexpr uint16_t ADDR_VRAM_START     = 0x8000; // Start of VRAM / end of switchable ROM
@@ -79,6 +42,8 @@ constexpr uint16_t ADDR_HRAM_START     = 0xFF80; // Start of high RAM
 // MBC write-decode range boundaries
 constexpr uint16_t MBC_RAM_ENABLE_END  = 0x2000; // End of RAM enable register range
 constexpr uint16_t MBC_RAM_BANK_END    = 0x6000; // End of RAM bank number register range
+constexpr uint8_t MBC_RAM_ENABLE       = 0x0A;   // Value to enable RAM on MBC1/MBC2/MBC3
+
 
 // ROM and RAM bank sizes
 constexpr uint32_t ROM_BANK_SIZE       = 0x4000; // 16 KiB per ROM bank
@@ -93,6 +58,9 @@ constexpr uint16_t ROM_HEADER_RAM_SIZE  = 0x0149; // RAM size code
 constexpr uint16_t MBC2_RAM_SIZE       = 512;    // MBC2 has 512 half-byte entries
 constexpr uint16_t MBC2_RAM_MASK       = 0x01FF; // MBC2 RAM address mask
 
+// MBC5
+constexpr uint16_t MBC5_ROM_HIGH_ADDR = 0x3000; // MBC5 ROM bank register low/high split
+
 // OAM DMA
 constexpr int      OAM_DMA_LENGTH      = 0xA0;   // 160 bytes transferred by OAM DMA
 
@@ -105,6 +73,7 @@ constexpr uint8_t INT_LCD_STAT = 0x02; // Bit 1: LCD STAT
 constexpr uint8_t INT_TIMER = 0x04; // Bit 2: Timer
 constexpr uint8_t INT_SERIAL = 0x08; // Bit 3: Serial
 constexpr uint8_t INT_JOYPAD = 0x10; // Bit 4: Joypad
+constexpr uint8_t INT_ALL_MASK = 0x1F; // Mask for all interrupt bits
 
 // Interrupt vectors
 constexpr uint16_t INT_VECTOR_VBLANK = 0x0040;
@@ -112,3 +81,8 @@ constexpr uint16_t INT_VECTOR_LCD_STAT = 0x0048;
 constexpr uint16_t INT_VECTOR_TIMER = 0x0050;
 constexpr uint16_t INT_VECTOR_SERIAL = 0x0058;
 constexpr uint16_t INT_VECTOR_JOYPAD = 0x0060;
+
+// CPU constants
+constexpr uint16_t CPU_INITIAL_PC = 0x0100; // Initial program counter value after boot ROM
+constexpr uint16_t CPU_INITIAL_SP = 0xFFFE; // Initial stack pointer value after boot ROM
+
