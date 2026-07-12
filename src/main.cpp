@@ -12,6 +12,8 @@
 #include "imgui_impl_sdlrenderer3.h"
 
 constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
+constexpr int MAX_QUEUED_BYTES = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * sizeof(int16_t) * 2; // ~2 frames
+
 
 struct WindowLayout
 {
@@ -377,9 +379,7 @@ int main(int argc, char** argv)
     const double target_frame_time = 1000.0 / FRAME_RATE; // Game Boy runs at ~59.7 Hz
     
     while (!quit && gameboy.running)
-    {
-        Uint64 frame_start = SDL_GetTicks();
-        
+    {        
         // Handle events
         SDL_Event event;
         while (SDL_PollEvent(&event))
@@ -425,6 +425,11 @@ int main(int argc, char** argv)
         
         // Run one frame of emulation (~70224 cycles)
         gameboy.step_frame();
+
+        while (SDL_GetAudioStreamQueued(audio_stream) > MAX_QUEUED_BYTES)
+        {
+            SDL_Delay(1); // Wait for audio buffer to drain
+        }
         
         SDL_PutAudioStreamData(
             audio_stream,
@@ -583,14 +588,7 @@ int main(int argc, char** argv)
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
         
         SDL_RenderPresent(renderer);
-        
-        // Frame rate limiting to ~60 FPS
-        Uint64 frame_end = SDL_GetTicks();
-        double elapsed = frame_end - frame_start;
-        if (elapsed < target_frame_time)
-        {
-            SDL_Delay((Uint32)(target_frame_time - elapsed));
-        }
+
     }
 
      gameboy.memory.save_battery(rom_path); // Save battery RAM if applicable
