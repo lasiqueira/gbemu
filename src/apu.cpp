@@ -26,6 +26,32 @@ void APU::step(int cycles, Memory& memory)
         }
     }
 
+    if (channel3.enabled)
+    {
+        channel3.period_timer -= cycles;
+        while (channel3.period_timer <= 0)
+        {
+            channel3.period_timer += (APU_PERIOD_MAX - channel3.period_value) * 2;
+            channel3.wave_pos = (channel3.wave_pos + 1) & 31; // Wave RAM has 32 samples
+        }
+    }
+
+    if (channel4.enabled)
+    {
+        channel4.period_timer -= cycles;
+        while (channel4.period_timer <= 0)
+        {
+            int divisor = channel4.clock_div == 0 ? 8 : channel4.clock_div * 16;
+            channel4.period_timer += divisor << channel4.clock_shift;
+            uint8_t xor_bit = ((channel4.lfsr & 0x01) ^ ((channel4.lfsr >> 1) & 0x01));
+            channel4.lfsr = (channel4.lfsr >> 1) | (xor_bit << 14);
+            if (channel4.lfsr_width == 7)
+            {
+                channel4.lfsr = (channel4.lfsr & ~0x40) | (xor_bit << 6); // Set bit 6 for 7-bit LFSR
+            }
+        }
+    }
+
     sample_counter += cycles * AUDIO_SAMPLE_RATE;
     while (sample_counter >= static_cast<uint32_t>(CPU_FREQUENCY))
     {
@@ -33,15 +59,19 @@ void APU::step(int cycles, Memory& memory)
         
         int ch1_sample = channel1.sample();
         int ch2_sample = channel2.sample();
+        int ch3_sample = channel3.sample(wave_ram);
+        int ch4_sample = channel4.sample();
 
-        // NR51: bit 4 = CH1 left, bit 0 = CH1 right
-        //       bit 5 = CH2 left, bit 1 = CH2 right
-        int left = ((nr51 & 0x10) ? ch1_sample : 0) + ((nr51 & 0x20) ? ch2_sample : 0);
-        int right = ((nr51 & 0x01) ? ch1_sample : 0) + ((nr51 & 0x02) ? ch2_sample : 0);
+        // NR51: left:  bit 4 = CH1, bit 5 = CH2, bit 6 = CH3, bit 7 = CH4
+        //       right: bit 0 = CH1, bit 1 = CH2, bit 2 = CH3, bit 3 = CH4
+        int left = ((nr51 & 0x10) ? ch1_sample : 0) + ((nr51 & 0x20) ? ch2_sample : 0) + ((nr51 & 0x40) ? ch3_sample : 0) + ((nr51 & 0x80) ? ch4_sample : 0);
+        int right = ((nr51 & 0x01) ? ch1_sample : 0) + ((nr51 & 0x02) ? ch2_sample : 0) + ((nr51 & 0x04) ? ch3_sample : 0) + ((nr51 & 0x08) ? ch4_sample : 0);
 
-        // 1092 is a scaling factor to convert 4-bit volume (0-15) to 16-bit signed sample range (-32768 to 32767)
-        sample_buffer.push_back(static_cast<int16_t>(left * AUDIO_SAMPLE_SCALING)); // Left channel sample. 
-        sample_buffer.push_back(static_cast<int16_t>(right * AUDIO_SAMPLE_SCALING)); // Right channel sample.
+        int left_volume = ((nr50 >> 4) & 0x07) + 1; // 3 bits for left volume
+        int right_volume = (nr50 & 0x07) + 1;       // 3 bits for right volume
+
+        sample_buffer.push_back(static_cast<int16_t>(left * left_volume * AUDIO_SAMPLE_SCALING)); // Left channel sample. 
+        sample_buffer.push_back(static_cast<int16_t>(right * right_volume * AUDIO_SAMPLE_SCALING)); // Right channel sample.
 
     }
     if (!master_enabled)
@@ -374,7 +404,8 @@ void APU::clock_envelope()
 }
 
 
-static constexpr uint8_t DUTY_TABLE[4] = {
+static constexpr uint8_t DUTY_TABLE[4] = 
+{
     0b00000001, // 12.5% duty
     0b00000011, // 25% duty
     0b00001111, // 50% duty
@@ -428,4 +459,28 @@ void SquareChannelWithSweep::clock_sweep()
 
     shadow_period = (uint16_t) new_freq;
     period_value = (uint16_t) new_freq;
+}
+
+static constexpr uint8_t WAVE_RAM_SHIFT[4] = 
+{
+    4, // mute
+    0, // 100%
+    1, // 50%
+    2  // 25%
+};
+
+int WaveChannel::sample(const uint8_t* wave_ram) const
+{
+    if (!enabled || !dac_enabled) return 0;
+
+    uint8_t wave_byte = wave_ram[wave_pos >> 1]; // Each byte contains two 4-bit samples
+    uint8_t sample_nibble = (wave_pos & 1) == 0 ? (wave_byte >> 4) : (wave_byte & 0x0F);
+
+    return (sample_nibble >> WAVE_RAM_SHIFT[volume]); // Scale sample based on volume setting
+}
+
+int NoiseChannel::sample() const
+{
+    if (!enabled || !dac_enabled) return 0;
+    return (~lfsr & 0x01) ? envelope.current_vol : 0; // Output current volume if LFSR bit 0 is 0
 }

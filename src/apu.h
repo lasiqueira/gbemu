@@ -6,7 +6,7 @@
 constexpr int AUDIO_SAMPLE_RATE = 44100;
 constexpr int APU_PERIOD_MAX = 2048; // Max period value for square/wave channels (2048 = 0x800)
 constexpr int FRAME_SEQ_CYCLES = 8192; // 8192 cycles per frame sequencer step (512 Hz)
-constexpr int AUDIO_SAMPLE_SCALING = 1092; // 4-bit volume → 16-bit signed scale
+constexpr int AUDIO_SAMPLE_SCALING = 68; // max per side is 4 ch × 15 vol × 8 NR50 = 480
 constexpr uint16_t APU_LFSR_INIT = 0x7FFF; // Initial value for 15-bit LFSR in noise channel
 constexpr uint8_t SWEEP_TIMER_DEFAULT = 8;
 
@@ -89,6 +89,8 @@ struct WaveChannel : public Channel
     uint16_t period_value = 0;
     uint8_t volume = 0; // 0=off, 1=100%, 2=50%, 3=25%
     uint8_t wave_pos = 0;
+
+    int sample(const uint8_t* wave_ram) const;
 };
 
 struct NoiseChannel : public Channel
@@ -98,6 +100,8 @@ struct NoiseChannel : public Channel
     uint8_t clock_div = 0;
     uint8_t lfsr_width = 15; // 15-bit or 7-bit
     Envelope envelope;
+
+    int sample() const;
 };
 
 struct APU
