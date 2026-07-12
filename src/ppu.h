@@ -106,6 +106,7 @@ struct PPU
     uint8_t window_line_counter = 0; // Track which window line to draw
     uint8_t visible_sprite_count = 0; // Number of sprites visible on the current scanline
     bool frame_ready = false;    // True when a frame is complete and ready to display
+    bool lcd_off = false;          // True if LCD is disabled (LCDC bit 7 is 0)
     uint16_t mode_cycles = 0;         // Cycles spent in current mode
     
     // Update PPU state for the given number of cycles

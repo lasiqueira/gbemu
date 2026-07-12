@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <chrono>
+#include <thread>
 #include "gameboy.h"
 #include "disassembler.h"
 #include <SDL3/SDL.h>
@@ -12,8 +14,6 @@
 #include "imgui_impl_sdlrenderer3.h"
 
 constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
-constexpr int MAX_QUEUED_BYTES = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * sizeof(int16_t) * 2; // ~2 frames
-
 
 struct WindowLayout
 {
@@ -42,9 +42,8 @@ static WindowLayout window_layout;
 WindowLayout compute_window_layout()
 {
     WindowLayout layout;
-    const int scale = 4; // 4x scaling for 160x144 screen
-    layout.game_width = SCREEN_WIDTH * scale;   // 640
-    layout.game_height = SCREEN_HEIGHT * scale; // 576
+    layout.game_width = SCREEN_WIDTH * DISPLAY_SCALE;   // 640
+    layout.game_height = SCREEN_HEIGHT * DISPLAY_SCALE; // 576
     #ifdef GBEMU_DEBUG
     layout.disasm_width = 300;
     layout.game_x = layout.disasm_width; // 300
@@ -371,13 +370,20 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // After init(), before the main loop:
+    // Pre-fill with 2 frames of silence to establish audio buffer headroom
+    const int prefill_samples = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * 2; // stereo
+    std::vector<int16_t> silence(prefill_samples, 0);
+    SDL_PutAudioStreamData(audio_stream, silence.data(), silence.size() * sizeof(int16_t));
+
     // Main loop
     bool quit = false;
     gameboy.running = true;
     
     // Frame timing for 60 FPS
     const double target_frame_time = 1000.0 / FRAME_RATE; // Game Boy runs at ~59.7 Hz
-    
+    auto next_frame = std::chrono::steady_clock::now();
+    const auto frame_duration = std::chrono::duration<double>(1.0 / FRAME_RATE);
     while (!quit && gameboy.running)
     {        
         // Handle events
@@ -425,17 +431,13 @@ int main(int argc, char** argv)
         
         // Run one frame of emulation (~70224 cycles)
         gameboy.step_frame();
-
-        while (SDL_GetAudioStreamQueued(audio_stream) > MAX_QUEUED_BYTES)
-        {
-            SDL_Delay(1); // Wait for audio buffer to drain
-        }
         
         SDL_PutAudioStreamData(
             audio_stream,
             gameboy.apu.sample_buffer.data(),
             gameboy.apu.sample_buffer.size() * sizeof(int16_t)
         );
+        
         gameboy.apu.sample_buffer.clear();
         
         // Update screen texture if frame is ready
@@ -588,6 +590,14 @@ int main(int argc, char** argv)
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
         
         SDL_RenderPresent(renderer);
+
+        next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(frame_duration);
+
+        auto now = std::chrono::steady_clock::now();
+        if (next_frame < now)
+            next_frame = now;
+
+        std::this_thread::sleep_until(next_frame);
 
     }
 

@@ -10,19 +10,21 @@ void PPU::step(int cycles, Memory& memory)
     // If LCD is disabled, reset PPU state and output white screen
     if (!(lcdc & LCDC_ENABLE))
     {
-        mode = PPUMode::OAMSearch;
-        mode_cycles = 0;
-        scanline = 0;
-        window_line_counter = 0;
-        memory.write(IO_LY, 0);
-        
-        // Fill framebuffer with white (color 0 = lightest)
-        framebuffer.fill(0);
-        update_rgba_buffer();
-        frame_ready = true;
+        if(!lcd_off)
+        {
+            lcd_off = true;
+            mode = PPUMode::OAMSearch;
+            mode_cycles = 0;
+            scanline = 0;
+            window_line_counter = 0;
+            memory.write(IO_LY, 0);
+            framebuffer.fill(0);
+            update_rgba_buffer();
+            frame_ready = true;
+        }
         return;
     }
-    
+    lcd_off = false;
     mode_cycles += cycles;
     
     switch (mode)
