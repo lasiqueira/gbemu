@@ -135,7 +135,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
 
                 channel1.shadow_period = channel1.period_value; // Initialize shadow period for sweep
-                channel1.sweep_counter = (channel1.sweep_pace == 0) ? 8 : channel1.sweep_pace; // Reset sweep counter
+                channel1.sweep_counter = (channel1.sweep_pace == 0) ? SWEEP_TIMER_DEFAULT : channel1.sweep_pace; // Reset sweep counter
                 channel1.sweep_enabled = (channel1.sweep_pace != 0) || (channel1.sweep_step != 0); // Enable sweep if pace or step is non-zero
                 if (channel1.length_counter == 0)
                 {
@@ -363,12 +363,14 @@ void APU::clock_length()
 
 void APU::clock_sweep()
 {
-    //TODO
+    channel1.clock_sweep();
 }
 
 void APU::clock_envelope()
 {
-    //TODO
+    channel1.envelope.clock_envelope();
+    channel2.envelope.clock_envelope();
+    channel4.envelope.clock_envelope();
 }
 
 
@@ -384,4 +386,46 @@ int SquareChannel::sample() const
     if (!enabled || !dac_enabled) return 0;
     bool high = (DUTY_TABLE[duty] >> duty_pos) & 1;
         return high ? envelope.current_vol : 0;
+}
+
+void Envelope::clock_envelope()
+{
+    if (env_pace == 0) return; // No envelope operation if pace is 0
+    
+    --env_counter;
+    if (env_counter == 0)
+    {
+        env_counter = env_pace;
+        if(env_add && current_vol < 15)
+        {
+            current_vol++;
+        }
+        else if (!env_add && current_vol > 0)
+        {
+            current_vol--;
+        }
+    }
+}
+
+void SquareChannelWithSweep::clock_sweep()
+{
+    --sweep_counter;
+    if(sweep_counter > 0) return; // Not time to clock sweep yet
+
+    sweep_counter = (sweep_pace == 0) ? SWEEP_TIMER_DEFAULT : sweep_pace; // Reset sweep counter
+
+    if (!sweep_enabled || sweep_pace == 0) return; // timer reloads but no update
+
+    int delta = shadow_period >> sweep_step;
+    int new_freq = shadow_period + (sweep_negate ? -delta : +delta);
+
+    if(new_freq >= APU_PERIOD_MAX) // Frequency overflow, disable channel
+    {
+        enabled = false;
+        sweep_enabled = false;
+        return;
+    }
+
+    shadow_period = (uint16_t) new_freq;
+    period_value = (uint16_t) new_freq;
 }

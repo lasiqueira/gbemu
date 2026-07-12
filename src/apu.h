@@ -8,6 +8,7 @@ constexpr int APU_PERIOD_MAX = 2048; // Max period value for square/wave channel
 constexpr int FRAME_SEQ_CYCLES = 8192; // 8192 cycles per frame sequencer step (512 Hz)
 constexpr int AUDIO_SAMPLE_SCALING = 1092; // 4-bit volume → 16-bit signed scale
 constexpr uint16_t APU_LFSR_INIT = 0x7FFF; // Initial value for 15-bit LFSR in noise channel
+constexpr uint8_t SWEEP_TIMER_DEFAULT = 8;
 
 // I/O AUDIO Register Addresses
 constexpr uint16_t IO_NR10   = 0xFF10; // Channel 1 Sweep
@@ -58,6 +59,7 @@ struct Envelope
     uint8_t env_pace = 0;
     uint8_t env_counter = 0;
     bool env_add = false;
+    void clock_envelope();
 };
 
 struct SquareChannel : public Channel
@@ -78,6 +80,8 @@ struct SquareChannelWithSweep : public SquareChannel
     uint8_t sweep_counter = 0;
     bool sweep_negate = false;
     bool sweep_enabled = false; // Track if sweep has fired
+
+    void clock_sweep();
 };
 
 struct WaveChannel : public Channel
