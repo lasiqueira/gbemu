@@ -70,6 +70,7 @@ struct SquareChannel : public Channel
     Envelope envelope;
 
     int sample() const;
+    void step(int cycles);
 };
 
 struct SquareChannelWithSweep : public SquareChannel
@@ -91,6 +92,7 @@ struct WaveChannel : public Channel
     uint8_t wave_pos = 0;
 
     int sample(const uint8_t* wave_ram) const;
+    void step(int cycles);
 };
 
 struct NoiseChannel : public Channel
@@ -102,6 +104,7 @@ struct NoiseChannel : public Channel
     Envelope envelope;
 
     int sample() const;
+    void step(int cycles);
 };
 
 struct APU

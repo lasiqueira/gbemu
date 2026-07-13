@@ -5,52 +5,10 @@
 
 void APU::step(int cycles, Memory& memory)
 {
-     
-    if (channel1.enabled)
-    {
-        channel1.period_timer -= cycles;
-        while (channel1.period_timer <= 0)
-        {
-            channel1.period_timer += (APU_PERIOD_MAX - channel1.period_value) * 4;
-            channel1.duty_pos = (channel1.duty_pos + 1) & 7;
-        }
-    }
-
-    if (channel2.enabled)
-    {
-        channel2.period_timer -= cycles;
-        while (channel2.period_timer <= 0)
-        {
-            channel2.period_timer += (APU_PERIOD_MAX - channel2.period_value) * 4;
-            channel2.duty_pos = (channel2.duty_pos + 1) & 7;
-        }
-    }
-
-    if (channel3.enabled)
-    {
-        channel3.period_timer -= cycles;
-        while (channel3.period_timer <= 0)
-        {
-            channel3.period_timer += (APU_PERIOD_MAX - channel3.period_value) * 2;
-            channel3.wave_pos = (channel3.wave_pos + 1) & 31; // Wave RAM has 32 samples
-        }
-    }
-
-    if (channel4.enabled)
-    {
-        channel4.period_timer -= cycles;
-        while (channel4.period_timer <= 0)
-        {
-            int divisor = channel4.clock_div == 0 ? 8 : channel4.clock_div * 16;
-            channel4.period_timer += divisor << channel4.clock_shift;
-            uint8_t xor_bit = ((channel4.lfsr & 0x01) ^ ((channel4.lfsr >> 1) & 0x01));
-            channel4.lfsr = (channel4.lfsr >> 1) | (xor_bit << 14);
-            if (channel4.lfsr_width == 7)
-            {
-                channel4.lfsr = (channel4.lfsr & ~0x40) | (xor_bit << 6); // Set bit 6 for 7-bit LFSR
-            }
-        }
-    }
+    channel1.step(cycles);
+    channel2.step(cycles);
+    channel3.step(cycles);
+    channel4.step(cycles);
 
     sample_counter += cycles * AUDIO_SAMPLE_RATE;
     while (sample_counter >= static_cast<uint32_t>(CPU_FREQUENCY))
@@ -483,4 +441,45 @@ int NoiseChannel::sample() const
 {
     if (!enabled || !dac_enabled) return 0;
     return (~lfsr & 0x01) ? envelope.current_vol : 0; // Output current volume if LFSR bit 0 is 0
+}
+
+void SquareChannel::step(int cycles)
+{
+    if (!enabled) return;
+    period_timer -= cycles;
+    while (period_timer <= 0)
+    {
+        period_timer += (APU_PERIOD_MAX - period_value) * 4; // Timer counts down every 4 cycles
+        duty_pos = (duty_pos + 1) & 7; // Cycle through duty positions
+    }
+}
+
+void WaveChannel::step(int cycles)
+{
+    if (!enabled) return;
+    period_timer -= cycles;
+    while (period_timer <= 0)
+    {
+        period_timer += (APU_PERIOD_MAX - period_value) * 2; // Timer counts down every 2 cycles
+        wave_pos = (wave_pos + 1) & 31; // Cycle through wave positions (32 samples)
+    }
+}
+
+void NoiseChannel::step(int cycles)
+{
+    if (!enabled) return;
+    period_timer -= cycles;
+    while (period_timer <= 0)
+    {
+        int divisor = clock_div == 0 ? 8 : clock_div * 16;
+        period_timer += divisor << clock_shift; // Timer counts down based on clock shift and divisor
+
+        uint8_t xor_bit = ((lfsr & 0x01) ^ ((lfsr >> 1) & 0x01));
+        lfsr = (lfsr >> 1) | (xor_bit << 14); // Shift LFSR and insert new bit at position 14
+
+        if (lfsr_width == 7)
+        {
+            lfsr = (lfsr & ~0x40) | (xor_bit << 6); // Set bit 6 for 7-bit LFSR
+        }
+    }
 }
