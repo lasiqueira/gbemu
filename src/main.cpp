@@ -43,23 +43,42 @@ static SDL_AudioStream* audio_stream = nullptr;
 static SDL_AudioDeviceID audio_device = 0;
 static WindowLayout window_layout;
 
-WindowLayout compute_window_layout()
+WindowLayout compute_window_layout(int window_width, int window_height)
 {
     WindowLayout layout;
-    layout.game_width = SCREEN_WIDTH * DISPLAY_SCALE;   // 640
-    layout.game_height = SCREEN_HEIGHT * DISPLAY_SCALE; // 576
+    layout.window_width = window_width;
+    layout.window_height = window_height;
+
     #ifdef GBEMU_DEBUG
     layout.disasm_width = 300;
-    layout.game_x = layout.disasm_width; // 300
-    layout.cpu_height = 200;
     layout.memory_width = 500;
-    layout.window_width = layout.game_width + layout.memory_width + layout.disasm_width;   // 1440
-    layout.window_height = layout.game_height + layout.cpu_height;   // 776
+    layout.cpu_height = 200;
+    layout.center_x = layout.disasm_width;
+    layout.center_width = window_width - layout.disasm_width - layout.memory_width;
+    layout.center_height = window_height - layout.cpu_height;
     #else
-    layout.game_x = 0;
-    layout.window_width = layout.game_width;
-    layout.window_height = layout.game_height;
+    layout.center_x = 0;
+    layout.center_width = window_width;
+    layout.center_height = window_height;
     #endif
+    
+    float gb_aspect = (float) SCREEN_WIDTH / (float) SCREEN_HEIGHT;
+    float center_aspect = (float) layout.center_width / (float) layout.center_height;
+
+    int scaled_w, scaled_h;
+    if (center_aspect > gb_aspect) {
+        // wider than GB → pillarbox (bars on sides)
+        scaled_h = layout.center_height;
+        scaled_w = (int)(scaled_h * gb_aspect);
+    } else {
+        // taller → letterbox (bars on top/bottom)
+        scaled_w = layout.center_width;
+        scaled_h = (int)(scaled_w / gb_aspect);
+    }
+    layout.game_width  = scaled_w;
+    layout.game_height = scaled_h;
+    layout.game_x = layout.center_x + (layout.center_width  - scaled_w) / 2;
+    layout.game_y = (layout.center_height - scaled_h) / 2;
 
     return layout;
 }
@@ -87,15 +106,28 @@ int init()
         }
     }
     SDL_free(joysticks);
-    
+    #ifdef GBEMU_DEBUG
+    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE + 300 + 500; // 1440
+    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE + 200;       // 776
+    #else
+    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE;
+    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE;
+    #endif
     // Compute window layout
-    window_layout = compute_window_layout();
+    window_layout = compute_window_layout(initial_window_width, initial_window_height);
     
     window = SDL_CreateWindow(
         "Game Boy Emulator",
         window_layout.window_width, window_layout.window_height,
-        0
+        SDL_WINDOW_RESIZABLE
     );
+    #ifdef GBEMU_DEBUG
+    // Minimum: panels (800px) + at least 1x game width (160px) and 1x game height (144px) + cpu strip
+    SDL_SetWindowMinimumSize(window, 300 + 500 + SCREEN_WIDTH, 200 + SCREEN_HEIGHT);
+    #else
+    SDL_SetWindowMinimumSize(window, SCREEN_WIDTH, SCREEN_HEIGHT);
+    
+#endif
     
     if (!window)
     {
@@ -385,7 +417,6 @@ int main(int argc, char** argv)
     gameboy.running = true;
     
     // Frame timing for 60 FPS
-    const double target_frame_time = 1000.0 / FRAME_RATE; // Game Boy runs at ~59.7 Hz
     auto next_frame = std::chrono::steady_clock::now();
     const auto frame_duration = std::chrono::duration<double>(1.0 / FRAME_RATE);
     while (!quit && gameboy.running)
