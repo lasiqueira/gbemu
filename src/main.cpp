@@ -18,10 +18,14 @@ constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
 struct WindowLayout
 {
     int game_x = 0;
+    int game_y = 0;
     int game_width = 0;
     int game_height = 0;
     int window_width = 0;
     int window_height = 0;
+    int center_x = 0;
+    int center_width = 0;
+    int center_height = 0;
     // Debug-only — zero in release builds
     int disasm_width = 0;
     int cpu_height = 0;
