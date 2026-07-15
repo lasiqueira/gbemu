@@ -115,19 +115,14 @@ int init()
     #endif
     // Compute window layout
     window_layout = compute_window_layout(initial_window_width, initial_window_height);
-    
+
     window = SDL_CreateWindow(
         "Game Boy Emulator",
         window_layout.window_width, window_layout.window_height,
         SDL_WINDOW_RESIZABLE
     );
-    #ifdef GBEMU_DEBUG
-    // Minimum: panels (800px) + at least 1x game width (160px) and 1x game height (144px) + cpu strip
-    SDL_SetWindowMinimumSize(window, 300 + 500 + SCREEN_WIDTH, 200 + SCREEN_HEIGHT);
-    #else
-    SDL_SetWindowMinimumSize(window, SCREEN_WIDTH, SCREEN_HEIGHT);
     
-#endif
+
     
     if (!window)
     {
@@ -136,6 +131,13 @@ int init()
         return 1;
     }
     
+    #ifdef GBEMU_DEBUG
+    // Minimum: panels (800px) + at least 1x game width (160px) and 1x game height (144px) + cpu strip
+    SDL_SetWindowMinimumSize(window, 300 + 500 + SCREEN_WIDTH, 200 + SCREEN_HEIGHT);
+    #else
+    SDL_SetWindowMinimumSize(window, SCREEN_WIDTH, SCREEN_HEIGHT);
+    #endif
+
     // Create renderer
     renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer)
@@ -423,6 +425,8 @@ int main(int argc, char** argv)
     {        
         // Handle events
         SDL_Event event;
+        int resize_w = 0, resize_h = 0;
+
         while (SDL_PollEvent(&event))
         {
             ImGui_ImplSDL3_ProcessEvent(&event);
@@ -453,6 +457,11 @@ int main(int argc, char** argv)
                     gamepad = nullptr;
                 }
             }
+            else if (event.type == SDL_EVENT_WINDOW_RESIZED)
+            {
+                resize_w = event.window.data1;
+                resize_h = event.window.data2;
+            }
             else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || 
                      event.type == SDL_EVENT_GAMEPAD_BUTTON_UP)
             {
@@ -464,6 +473,13 @@ int main(int argc, char** argv)
             }
         }
         
+        if (resize_w > 0)
+        {
+            window_layout = compute_window_layout(resize_w, resize_h);
+            resize_w = resize_h = 0;
+            next_frame = std::chrono::steady_clock::now(); // reset after resize
+
+        }
         // Run one frame of emulation (~70224 cycles)
         gameboy.step_frame();
         
@@ -494,30 +510,28 @@ int main(int argc, char** argv)
         
 #ifdef GBEMU_DEBUG
         // CPU State window - fixed below game screen
-        ImGui::SetNextWindowPos(ImVec2(window_layout.disasm_width, window_layout.game_height), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(window_layout.game_width, window_layout.cpu_height), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(window_layout.center_x, window_layout.center_height), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(window_layout.center_width, window_layout.cpu_height), ImGuiCond_Always);
         ImGui::Begin("CPU State", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        ImGui::Text("PC: 0x%04X", gameboy.cpu.pc);
-        ImGui::SameLine(150);
-        ImGui::Text("SP: 0x%04X", gameboy.cpu.sp);
-        ImGui::SameLine(300);
-        ImGui::Text("IME: %s", gameboy.cpu.ime ? "ON" : "OFF");
-        ImGui::SameLine(450);
-        ImGui::Text("Instructions: %llu", gameboy.cpu.instructions_executed);
+        if (ImGui::BeginTable("cpu_row1", 4, ImGuiTableFlags_SizingStretchSame))
+        {
+            ImGui::TableNextColumn(); ImGui::Text("PC: 0x%04X", gameboy.cpu.pc);
+            ImGui::TableNextColumn(); ImGui::Text("SP: 0x%04X", gameboy.cpu.sp);
+            ImGui::TableNextColumn(); ImGui::Text("IME: %s", gameboy.cpu.ime ? "ON" : "OFF");
+            ImGui::TableNextColumn(); ImGui::Text("Instructions: %llu", gameboy.cpu.instructions_executed);
+            ImGui::EndTable();
+        }
         
         ImGui::Separator();
         
-        ImGui::Text("AF: 0x%04X  (A: 0x%02X  F: 0x%02X)", 
-            gameboy.cpu.af.pair, gameboy.cpu.af.high, gameboy.cpu.af.low);
-        ImGui::SameLine(300);
-        ImGui::Text("BC: 0x%04X  (B: 0x%02X  C: 0x%02X)", 
-            gameboy.cpu.bc.pair, gameboy.cpu.bc.high, gameboy.cpu.bc.low);
-        
-        ImGui::Text("DE: 0x%04X  (D: 0x%02X  E: 0x%02X)", 
-            gameboy.cpu.de.pair, gameboy.cpu.de.high, gameboy.cpu.de.low);
-        ImGui::SameLine(300);
-        ImGui::Text("HL: 0x%04X  (H: 0x%02X  L: 0x%02X)", 
-            gameboy.cpu.hl.pair, gameboy.cpu.hl.high, gameboy.cpu.hl.low);
+        if (ImGui::BeginTable("cpu_regs", 2, ImGuiTableFlags_SizingStretchSame))
+{
+        ImGui::TableNextColumn(); ImGui::Text("AF: 0x%04X  (A: 0x%02X  F: 0x%02X)", gameboy.cpu.af.pair, gameboy.cpu.af.high, gameboy.cpu.af.low);
+        ImGui::TableNextColumn(); ImGui::Text("BC: 0x%04X  (B: 0x%02X  C: 0x%02X)", gameboy.cpu.bc.pair, gameboy.cpu.bc.high, gameboy.cpu.bc.low);
+        ImGui::TableNextColumn(); ImGui::Text("DE: 0x%04X  (D: 0x%02X  E: 0x%02X)", gameboy.cpu.de.pair, gameboy.cpu.de.high, gameboy.cpu.de.low);
+        ImGui::TableNextColumn(); ImGui::Text("HL: 0x%04X  (H: 0x%02X  L: 0x%02X)", gameboy.cpu.hl.pair, gameboy.cpu.hl.high, gameboy.cpu.hl.low);
+        ImGui::EndTable();
+}
         
         ImGui::Separator();
         ImGui::Text("Flags:  Z: %d  N: %d  H: %d  C: %d",
@@ -528,7 +542,7 @@ int main(int argc, char** argv)
         ImGui::End();
         
         // Memory viewer - fixed to the right
-        ImGui::SetNextWindowPos(ImVec2(window_layout.disasm_width + window_layout.game_width, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(window_layout.center_x + window_layout.center_width, 0), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(window_layout.memory_width, window_layout.window_height), ImGuiCond_Always);
         ImGui::Begin("Memory Viewer", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
         ImGui::Text("Current Byte at PC: 0x%02X", gameboy.memory.read(gameboy.cpu.pc));
@@ -536,8 +550,11 @@ int main(int argc, char** argv)
         
         // Display memory around PC
         ImGui::BeginChild("MemoryScroll");
-        uint16_t start_addr = (gameboy.cpu.pc & 0xFFF0); // Align to 16 bytes
-        for (int row = -8; row < 32; row++)
+        float line_h = ImGui::GetTextLineHeightWithSpacing();
+        int visible_rows = std::max(4, (int)(ImGui::GetContentRegionAvail().y / line_h));
+        int half = visible_rows / 2;
+        uint16_t start_addr = (gameboy.cpu.pc & 0xFFF0);
+        for (int row = -half; row < half; row++)
         {
             uint16_t addr = start_addr + (row * 16);
             ImGui::Text("%04X:", addr);
@@ -573,39 +590,36 @@ int main(int argc, char** argv)
         ImGui::SetNextWindowSize(ImVec2(window_layout.disasm_width, window_layout.window_height), ImGuiCond_Always);
         ImGui::Begin("Disassembly", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
         ImGui::BeginChild("DisasmScroll");
-
         const auto& history = gameboy.cpu.pc_history;
-        
-        if(!history.empty())
-        {
-            size_t start = history.size() > 50 ? history.size() - 50 : 0;
-            for (size_t i = start; i < history.size(); i++)
-            {
-                uint16_t addr = history[i];
-                uint8_t bytes[3] = {
-                    gameboy.memory.read(addr),
-                    gameboy.memory.read(addr + 1),
-                    gameboy.memory.read(addr + 2)
-                };
+        line_h = ImGui::GetTextLineHeightWithSpacing();
+        int visible_lines = std::max(4, (int)(ImGui::GetContentRegionAvail().y / line_h));
+        size_t start = history.size() > (size_t)visible_lines ? history.size() - visible_lines : 0;
 
-                auto instr = disassembler::decode_instruction(bytes, 3);
-                std::string line = std::format("{:04X}  {} {}", addr, instr.mnemonic, instr.operands);
-                bool is_current = (i == history.size() - 1);
-                if (is_current)
-                {
-                    ImVec2 pos = ImGui::GetCursorScreenPos();
-                    ImVec2 size = ImGui::CalcTextSize(line.c_str());
-                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-                }
-                ImGui::TextUnformatted(line.c_str());
-                if(is_current)
-                {
-                    ImGui::PopStyleColor();
-                    ImGui::SetScrollHereY(1.0f);
-                }
+        for (size_t i = start; i < history.size(); i++)
+        {
+            uint16_t addr = history[i];
+            uint8_t bytes[3] = {
+                gameboy.memory.read(addr),
+                gameboy.memory.read(addr + 1),
+                gameboy.memory.read(addr + 2)
+            };
+
+            auto instr = disassembler::decode_instruction(bytes, 3);
+            std::string line = std::format("{:04X}  {} {}", addr, instr.mnemonic, instr.operands);
+            bool is_current = (i == history.size() - 1);
+            if (is_current)
+            {
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                ImVec2 size = ImGui::CalcTextSize(line.c_str());
+                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             }
-    
+            ImGui::TextUnformatted(line.c_str());
+            if(is_current)
+            {
+                ImGui::PopStyleColor();
+                ImGui::SetScrollHereY(1.0f);
+            }
         }
 
         ImGui::EndChild();
@@ -618,7 +632,7 @@ int main(int argc, char** argv)
         SDL_RenderClear(renderer);
         
         // Render Game Boy screen in top-left corner
-        SDL_FRect game_rect = { (float)window_layout.game_x, 0, (float)window_layout.game_width, (float)window_layout.game_height };
+        SDL_FRect game_rect = { (float)window_layout.game_x, (float)window_layout.game_y, (float)window_layout.game_width, (float)window_layout.game_height };
         SDL_RenderTexture(renderer, screen_texture, nullptr, &game_rect);
         
         // Render ImGui
