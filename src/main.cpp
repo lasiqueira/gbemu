@@ -357,13 +357,15 @@ int main(int argc, char** argv)
     bool disassemble_mode = false;
     
     // Check for disassemble flag
-    if (argc >= 3)
+    bool headless_mode = false;
+
+    for (int i = 2; i < argc; ++i)
     {
-        std::string arg2 = argv[2];
-        if (arg2 == "--disassemble" || arg2 == "-d")
-        {
+        std::string arg = argv[i];
+        if (arg == "--disassemble" || arg == "-d")
             disassemble_mode = true;
-        }
+        else if (arg == "--headless")
+            headless_mode = true;
     }
 
     // Check if file exists
@@ -401,13 +403,53 @@ int main(int argc, char** argv)
         disassembler::disassemble_rom(rom, 0, rom.size());
         return 0;
     }
-    
+
     // Initialize Game Boy and load ROM
     gameboy.load_rom(rom, rom_path);
-    
+
     std::println("ROM loaded: {} bytes", rom.size());
     std::println("Starting emulation...");
     std::println("");
+
+    // Headless mode: run without SDL, stop on pass/fail serial output or ext_ram result
+    if (headless_mode)
+    {
+        gameboy.running = true;
+        constexpr int HEADLESS_TIMEOUT_FRAMES = 60 * 120; // 120 seconds max
+        // Signature written by blargg's init_text_out into ext_ram at offsets 1-3
+        // $A001=$DE, $A002=$B0, $A003=$61 — indicates a RAM-output test has initialised
+        auto ram_initialized = [&]() -> bool {
+            const auto& r = gameboy.memory.ext_ram;
+            return r.size() >= 8 && r[1] == 0xDE && r[2] == 0xB0 && r[3] == 0x61;
+        };
+
+        for (int frame = 0; frame < HEADLESS_TIMEOUT_FRAMES && gameboy.running; ++frame)
+        {
+            gameboy.step_frame();
+
+            // Serial-output tests (cpu_instrs, instr_timing, mem_timing)
+            const std::string& sout = gameboy.memory.serial_output;
+            if (sout.find("Passed") != std::string::npos ||
+                sout.find("passed") != std::string::npos ||
+                sout.find("Failed") != std::string::npos ||
+                sout.find("failed") != std::string::npos)
+            {
+                break;
+            }
+
+            // RAM-output tests (mem_timing-2, dmg_sound, oam_bug, halt_bug)
+            // ext_ram[0] = final_result: $80 = in progress, 0 = pass, other = fail
+            if (ram_initialized() && gameboy.memory.ext_ram[0] != 0x80)
+            {
+                // Print text output from ext_ram[4] onward (null-terminated string)
+                const char* text = reinterpret_cast<const char*>(gameboy.memory.ext_ram.data() + 4);
+                std::printf("%s\n", text);
+                fflush(stdout);
+                break;
+            }
+        }
+        return 0;
+    }
     
     if(init() != 0)
     {

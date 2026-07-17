@@ -185,7 +185,7 @@ uint8_t Memory::read(uint16_t addr) const
         }
 
         // Audio registers: $FF10-$FF26
-        if (addr >= IO_NR10 && addr <= IO_NR52)
+        if (addr >= IO_NR10 && addr <= IO_WAVE_RAM_START - 1)
         {
             if (apu) return apu->on_register_read(addr);
             return io[addr - ADDR_IO_START];
@@ -194,6 +194,7 @@ uint8_t Memory::read(uint16_t addr) const
         // Wave RAM: 0xFF30 - 0xFF3F
         if (addr >= IO_WAVE_RAM_START && addr <= IO_WAVE_RAM_END)
         {
+            if (apu) return apu->on_wave_ram_read(addr - IO_WAVE_RAM_START);
             return io[addr - ADDR_IO_START];
         }
 
@@ -367,6 +368,7 @@ void Memory::write(uint16_t addr, uint8_t value)
                 char c = static_cast<char>(io[0x01]);
                 putchar(c);
                 fflush(stdout);
+                serial_output += c;
                 io[0x02] &= ~0x80;  // Clear transfer-start bit (transfer complete)
                 io[0x0F] |= INT_SERIAL;   // Request serial interrupt
             }

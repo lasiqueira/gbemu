@@ -54,6 +54,9 @@ struct Memory {
     bool has_battery = false;
     bool has_rtc = false;
 
+    // Serial output buffer (used in headless mode)
+    std::string serial_output;
+
     // Joypad state
     uint8_t joypad_state = 0xFF; // Current button states (0 = pressed, 1 = released)
 

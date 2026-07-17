@@ -81,6 +81,7 @@ struct SquareChannelWithSweep : public SquareChannel
     uint8_t sweep_counter = 0;
     bool sweep_negate = false;
     bool sweep_enabled = false; // Track if sweep has fired
+    bool negate_was_used = false; 
 
     void clock_sweep();
 };
@@ -130,6 +131,12 @@ struct APU
     uint8_t on_register_read(uint16_t addr);
     void frame_seq_step();
     void on_wave_ram_write(uint16_t offset, uint8_t value);
+    uint8_t on_wave_ram_read(uint16_t offset) const;
+    // Handles the three-step length-clock logic common to all NRx4 writes:
+    // 1) pre-trigger extra clock on 0→1 enable transition at odd frame-seq step
+    // 2) trigger reload (counter 0 → max)
+    // 3) post-trigger extra clock when trigger just reloaded from 0
+    void apply_length_clock(Channel& ch, bool old_len, bool triggered, uint16_t max_len);
     void clock_length();
     void clock_sweep();
     void clock_envelope();

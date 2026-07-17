@@ -49,23 +49,55 @@ void APU::step(int cycles, Memory& memory)
 
 void APU::on_register_write(uint16_t addr, uint8_t value)
 {
+    if (!master_enabled && addr != IO_NR52 && addr != IO_NR41)
+    {
+        return; // APU is disabled, ignore writes except to NR52 and NR41 (length timer)
+    }
     switch (addr)
     {
         // APU level registers
         case IO_NR52:
         {
+            bool was_enabled = master_enabled;
             bool powered = value & 0x80;
             if (!powered)
             {
                 master_enabled = false;
+                nr50 = 0;
+                nr51 = 0;
+                frame_seq_counter = 0;
+                cycle_counter = 0;
+                
+                uint16_t lc1 = channel1.length_counter;
+                uint16_t lc2 = channel2.length_counter;
+                uint16_t lc3 = channel3.length_counter;
+                uint16_t lc4 = channel4.length_counter;
+
+                uint16_t lv1 = channel1.length_value;
+                uint16_t lv2 = channel2.length_value;
+                uint16_t lv3 = channel3.length_value;
+                uint16_t lv4 = channel4.length_value;
+
                 channel1 = {};
                 channel2 = {};
                 channel3 = {};
                 channel4 = {};
+
+                channel1.length_counter = lc1;
+                channel2.length_counter = lc2;
+                channel3.length_counter = lc3;
+                channel4.length_counter = lc4;
+
+                channel1.length_value = lv1;
+                channel2.length_value = lv2;
+                channel3.length_value = lv3;
+                channel4.length_value = lv4;
             }
-            else
+            else if (!was_enabled && powered)
             {
                 master_enabled = true;
+                frame_seq_counter = 0;
+                cycle_counter = 0;
             }
         }  break;
         
@@ -82,15 +114,21 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         // Channel 1 Sweep register
         case IO_NR10:
         {
+            bool old_negate = channel1.sweep_negate;
             channel1.sweep_pace = (value >> 4) & 0x07;
             channel1.sweep_negate = (value & 0x08) != 0;
             channel1.sweep_step = value & 0x07;
+            if (old_negate && !channel1.sweep_negate && channel1.negate_was_used)
+            {
+                channel1.enabled = false;
+            }
         } break;
 
         case IO_NR11:
         {
             channel1.duty = (value >> 6) & 0x03;
             channel1.length_value = value & 0x3F;
+            channel1.length_counter = 64 - channel1.length_value;
         } break;
 
         case IO_NR12:
@@ -113,23 +151,28 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR14:
         {
             channel1.period_value = (channel1.period_value & 0x00FF) | ((value & 0x07) << 8);
+            bool old_len1 = channel1.length_enabled;
             channel1.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
                 if (channel1.dac_enabled) channel1.enabled = true;
-                channel1.period_timer = (APU_PERIOD_MAX - channel1.period_value) * 4; // Timer counts down every 4 cycles
+                channel1.period_timer = (APU_PERIOD_MAX - channel1.period_value) * 4;
                 channel1.envelope.current_vol = channel1.envelope.initial_vol;
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
-
-                channel1.shadow_period = channel1.period_value; // Initialize shadow period for sweep
-                channel1.sweep_counter = (channel1.sweep_pace == 0) ? SWEEP_TIMER_DEFAULT : channel1.sweep_pace; // Reset sweep counter
-                channel1.sweep_enabled = (channel1.sweep_pace != 0) || (channel1.sweep_step != 0); // Enable sweep if pace or step is non-zero
-                if (channel1.length_counter == 0)
+                channel1.negate_was_used = false;
+                channel1.shadow_period = channel1.period_value;
+                channel1.sweep_counter = (channel1.sweep_pace == 0) ? SWEEP_TIMER_DEFAULT : channel1.sweep_pace;
+                channel1.sweep_enabled = (channel1.sweep_pace != 0) || (channel1.sweep_step != 0);
+                if (channel1.sweep_step > 0)
                 {
-                    channel1.length_counter = 64 - channel1.length_value; // Length counter is 64 - NR11 value
+                    int delta = channel1.shadow_period >> channel1.sweep_step;
+                    int next = channel1.shadow_period + (channel1.sweep_negate ? -delta : +delta);
+                    if (channel1.sweep_negate) channel1.negate_was_used = true;
+                    if (next >= APU_PERIOD_MAX) channel1.enabled = false;
                 }
             }
+            apply_length_clock(channel1, old_len1, trigger, 64);
         } break;
 
         // Channel 2 registers
@@ -137,6 +180,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         {
             channel2.duty = (value >> 6) & 0x03;
             channel2.length_value = value & 0x3F;
+            channel2.length_counter = 64 - channel2.length_value;
         } break;
 
         case IO_NR22:
@@ -159,16 +203,17 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR24:
         {
             channel2.period_value = (channel2.period_value & 0x00FF) | ((value & 0x07) << 8);
+            bool old_len2 = channel2.length_enabled;
             channel2.length_enabled = (value & 0x40) != 0;
-
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
                 if (channel2.dac_enabled) channel2.enabled = true;
-                channel2.period_timer = (APU_PERIOD_MAX - channel2.period_value) * 4; // Timer counts down every 4 cycles
+                channel2.period_timer = (APU_PERIOD_MAX - channel2.period_value) * 4;
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
                 channel2.envelope.env_counter = channel2.envelope.env_pace;
             }
+            apply_length_clock(channel2, old_len2, trigger, 64);
         } break;
 
         // Channel 3 registers
@@ -184,6 +229,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR31:
         {
             channel3.length_value = value;
+            channel3.length_counter = 256 - channel3.length_value;
         } break;
 
         case IO_NR32:
@@ -199,24 +245,26 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR34:
         {
             channel3.period_value = (channel3.period_value & 0x00FF) | ((value & 0x07) << 8);
+            bool old_len3 = channel3.length_enabled;
             channel3.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
+                // DMG wave corruption: retriggering while active latches the currently-playing
+                // wave byte into wave RAM position 0.
+                if (channel3.enabled) wave_ram[0] = wave_ram[channel3.wave_pos >> 1];
                 if (channel3.dac_enabled) channel3.enabled = true;
-                channel3.period_timer = (APU_PERIOD_MAX - channel3.period_value) * 2; // Timer counts down every 2 cycles
-                channel3.wave_pos = 0; // Reset wave position
-                if (channel3.length_counter == 0)
-                {
-                    channel3.length_counter = 256 - channel3.length_value; // Length counter is 256 - NR31 value
-                }
+                channel3.period_timer = (APU_PERIOD_MAX - channel3.period_value) * 2;
+                channel3.wave_pos = 0;
             }
+            apply_length_clock(channel3, old_len3, trigger, 256);
         } break;
 
         // Channel 4 registers
         case IO_NR41:
         {
             channel4.length_value = value & 0x3F;
+            channel4.length_counter = 64 - channel4.length_value;
         } break;
 
         case IO_NR42:
@@ -240,6 +288,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
 
         case IO_NR44:
         {
+            bool old_len4 = channel4.length_enabled;
             channel4.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
             if (trigger)
@@ -247,13 +296,10 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 if (channel4.dac_enabled) channel4.enabled = true;
                 channel4.envelope.env_counter = channel4.envelope.env_pace;
                 channel4.envelope.current_vol = channel4.envelope.initial_vol;
-                channel4.lfsr = APU_LFSR_INIT; // Reset LFSR to all 1s
+                channel4.lfsr = APU_LFSR_INIT;
                 channel4.period_timer = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16) << channel4.clock_shift;
-                if (channel4.length_counter == 0)
-                {
-                    channel4.length_counter = 64 - channel4.length_value; // Length counter is 64 - NR41 value
-                }
             }
+            apply_length_clock(channel4, old_len4, trigger, 64);
         } break;
 
        default: break;
@@ -328,8 +374,42 @@ void APU::frame_seq_step()
 void APU::on_wave_ram_write(uint16_t offset, uint8_t value)
 {
     if (offset < 16)
+    {   
+        if (channel3.enabled)
+        {
+            wave_ram[channel3.wave_pos >> 1] = value;
+        }
+        else
+        {
+            wave_ram[offset] = value;
+        }
+    }
+}
+
+uint8_t APU::on_wave_ram_read(uint16_t offset) const
+{
+    if (channel3.enabled)
     {
-        wave_ram[offset] = value;
+        return wave_ram[channel3.wave_pos >> 1];
+    }
+    return wave_ram[offset];
+}
+
+void APU::apply_length_clock(Channel& ch, bool old_len, bool triggered, uint16_t max_len)
+{
+    // Step 1: pre-trigger extra clock — 0→1 length-enable transition at odd frame-seq step
+    if (!old_len && ch.length_enabled && (frame_seq_counter & 1))
+        ch.clock_length();
+
+    if (triggered)
+    {
+        // Step 2: trigger reload — if counter reached 0, load channel maximum
+        bool was_zero = (ch.length_counter == 0);
+        if (was_zero) ch.length_counter = max_len;
+
+        // Step 3: post-trigger extra clock — fires only when trigger just reloaded from 0
+        if (was_zero && ch.length_enabled && (frame_seq_counter & 1))
+            ch.clock_length();
     }
 }
 
@@ -405,6 +485,8 @@ void SquareChannelWithSweep::clock_sweep()
 
     if (!sweep_enabled || sweep_pace == 0) return; // timer reloads but no update
 
+    if (sweep_negate) negate_was_used = true;
+
     int delta = shadow_period >> sweep_step;
     int new_freq = shadow_period + (sweep_negate ? -delta : +delta);
 
@@ -415,8 +497,21 @@ void SquareChannelWithSweep::clock_sweep()
         return;
     }
 
-    shadow_period = (uint16_t) new_freq;
-    period_value = (uint16_t) new_freq;
+    // Only write back if step != 0; step=0 checks overflow but keeps original frequency
+    if (sweep_step > 0)
+    {
+        shadow_period = (uint16_t) new_freq;
+        period_value = (uint16_t) new_freq;
+
+        // Second overflow check after write-back
+        int delta2 = shadow_period >> sweep_step;
+        int next2 = shadow_period + (sweep_negate ? -delta2 : +delta2);
+        if (next2 >= APU_PERIOD_MAX)
+        {
+            enabled = false;
+            sweep_enabled = false;
+        }
+    }
 }
 
 static constexpr uint8_t WAVE_RAM_SHIFT[4] = 
