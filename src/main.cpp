@@ -14,6 +14,12 @@
 #include "imgui_impl_sdlrenderer3.h"
 
 constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
+#ifdef GBEMU_DEBUG
+constexpr int DISASM_PANEL_WIDTH = 300; // Width of disassembly panel
+constexpr int MEMORY_PANEL_WIDTH = 500; // Width of memory viewer panel
+constexpr int CPU_PANEL_HEIGHT = 200; // Height of CPU state panel
+#endif
+
 
 struct WindowLayout
 {
@@ -50,9 +56,9 @@ WindowLayout compute_window_layout(int window_width, int window_height)
     layout.window_height = window_height;
 
     #ifdef GBEMU_DEBUG
-    layout.disasm_width = 300;
-    layout.memory_width = 500;
-    layout.cpu_height = 200;
+    layout.disasm_width = DISASM_PANEL_WIDTH;
+    layout.memory_width = MEMORY_PANEL_WIDTH;
+    layout.cpu_height = CPU_PANEL_HEIGHT;
     layout.center_x = layout.disasm_width;
     layout.center_width = window_width - layout.disasm_width - layout.memory_width;
     layout.center_height = window_height - layout.cpu_height;
@@ -107,8 +113,8 @@ int init()
     }
     SDL_free(joysticks);
     #ifdef GBEMU_DEBUG
-    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE + 300 + 500; // 1440
-    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE + 200;       // 776
+    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE + DISASM_PANEL_WIDTH + MEMORY_PANEL_WIDTH; // 1440
+    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE + CPU_PANEL_HEIGHT;       // 776
     #else
     int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE;
     int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE;
@@ -133,7 +139,7 @@ int init()
     
     #ifdef GBEMU_DEBUG
     // Minimum: panels (800px) + at least 1x game width (160px) and 1x game height (144px) + cpu strip
-    SDL_SetWindowMinimumSize(window, 300 + 500 + SCREEN_WIDTH, 200 + SCREEN_HEIGHT);
+    SDL_SetWindowMinimumSize(window, DISASM_PANEL_WIDTH + MEMORY_PANEL_WIDTH + SCREEN_WIDTH, CPU_PANEL_HEIGHT + SCREEN_HEIGHT);
     #else
     SDL_SetWindowMinimumSize(window, SCREEN_WIDTH, SCREEN_HEIGHT);
     #endif
