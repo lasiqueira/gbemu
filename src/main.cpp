@@ -173,7 +173,9 @@ int init()
         SDL_Quit();
         return 1;
     }
-    
+
+    SDL_SetTextureScaleMode(screen_texture, SDL_SCALEMODE_NEAREST);
+
     // Initialize ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
