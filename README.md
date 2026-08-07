@@ -74,6 +74,21 @@ Detailed development documentation with step-by-step explanations is available i
     - MBC3 RTC register latch
     - MBC5 9-bit ROM bank number
 
+- **Audio Processing Unit (APU)**
+  - CH1: Square wave with frequency sweep (NR10–NR14)
+  - CH2: Square wave (NR21–NR24)
+  - CH3: Wave channel with 32-nibble custom waveform (NR30–NR34)
+  - CH4: Noise channel with 15-bit/7-bit LFSR (NR41–NR44)
+  - Frame sequencer at 512 Hz: length (256 Hz), sweep (128 Hz), envelope (64 Hz)
+  - Volume envelope on CH1, CH2, CH4 (configurable pace, fade in/out)
+  - Frequency sweep on CH1: overflow check on trigger and on each clock; negate-mode exit immediately disables channel
+  - NR51 per-channel stereo panning, NR50 master volume (1–8 per side)
+  - NR52 master enable/disable; length counters preserved through power cycles (DMG hardware behaviour)
+  - NR41 (CH4 length register) writable while APU powered off (DMG hardware behaviour)
+  - Wave channel read/write while active accesses currently-playing Wave RAM position (DMG hardware behaviour)
+  - SDL3 stereo audio stream at 44,100 Hz, 16-bit signed
+  - Frame-paced audio delivery
+
 - **Complete Game Boy Instruction Disassembler**
   - All 256 standard opcodes (0x00-0xFF)
   - All 256 CB-prefixed opcodes (0xCB00-0xCBFF)
@@ -402,7 +417,7 @@ Addr  Instruction           Flags       Len  Cycles
 
 **Fully playable!**
 
-The emulator successfully runs Tetris and passes all 11 Blargg cpu_instrs tests. MBC1-MBC5 cartridge support enables larger ROMs.
+The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_instrs tests, and produces full stereo audio. MBC1–MBC5 cartridge support enables the full commercial game library.
 
 ### Implemented Features
 
@@ -450,6 +465,18 @@ The emulator successfully runs Tetris and passes all 11 Blargg cpu_instrs tests.
 - ✅ Cartridge header parsing (type, ROM size, RAM size)
 - ✅ Battery-backed save files (.sav) with RTC persistence
 
+**Audio (APU):**
+- ✅ CH1 square wave: all duty cycles, envelope, frequency sweep
+- ✅ CH2 square wave: all duty cycles, envelope
+- ✅ CH3 wave channel: 32-nibble wave RAM, four output levels
+- ✅ CH4 noise channel: 15-bit and 7-bit LFSR modes
+- ✅ Frame sequencer (length, sweep, envelope clocks)
+- ✅ Volume envelopes on CH1, CH2, CH4
+- ✅ Frequency sweep on CH1: overflow on trigger and clock, negate-mode exit disables channel
+- ✅ NR51 stereo panning, NR50 master volume, NR52 master enable with DMG power-cycle behaviour
+- ✅ Wave channel active read/write redirects to currently-playing position
+- ✅ 44,100 Hz stereo output via SDL3 audio stream
+
 **Documentation:**
 - ✅ Comprehensive HTML documentation covering all implemented systems
 - ✅ Step-by-step development log
@@ -469,6 +496,45 @@ The emulator successfully runs Tetris and passes all 11 Blargg cpu_instrs tests.
 - ✅ 10: bit ops
 - ✅ 11: op a,(hl)
 
+**Blargg dmg_sound — 8 of 12 tests pass:**
+- ✅ 01: registers
+- ✅ 02: len ctr
+- ✅ 03: trigger
+- ✅ 04: sweep
+- ✅ 05: sweep details
+- ✅ 06: overflow on trigger
+- ✅ 07: len sweep period sync
+- ❌ 08: len ctr during power (power-cycle counter preservation timing)
+- ❌ 09: wave read while on (requires CPU bus timing fix)
+- ❌ 10: wave trigger while on (requires CPU bus timing fix)
+- ✅ 11: regs after power
+- ❌ 12: wave write while on (requires CPU bus timing fix)
+
+**Blargg instr_timing — passes:**
+- ✅ instr_timing
+
+**Blargg mem_timing — 0 of 3 tests pass (requires CPU bus timing fix):**
+- ❌ 01: read_timing
+- ❌ 02: write_timing
+- ❌ 03: modify_timing
+
+**Blargg mem_timing-2 — 0 of 3 tests pass (requires CPU bus timing fix):**
+- ❌ 01: read_timing
+- ❌ 02: write_timing
+- ❌ 03: modify_timing
+
+**Blargg oam_bug — 2 of 8 tests pass (OAM corruption quirk not implemented):**
+- ❌ 1-lcd_sync
+- ❌ 2-causes
+- ✅ 3-non_causes
+- ❌ 4-scanline_timing
+- ❌ 5-timing_bug
+- ✅ 6-timing_no_bug
+- ❌ 7-timing_effect
+- ❌ 8-instr_effect
+
+**Blargg halt_bug — visual-only test (no serial/RAM output, not measurable headlessly)**
+
 **Tetris — fully playable:**
 - ✅ Boots to title screen with full graphics
 - ✅ Title screen demo timeout (timer-driven countdown)
@@ -479,9 +545,14 @@ The emulator successfully runs Tetris and passes all 11 Blargg cpu_instrs tests.
 - ✅ V-Blank, LCD STAT, and timer interrupts working
 - ✅ Serial port: master-mode transfers complete; slave-mode stalls (no false link-cable detection)
 
+**Pokémon Blue — fully playable:**
+- ✅ Title screen, intro sequence, main menu and save/load
+- ✅ Overworld exploration with full background music (CH1–CH3) and sound effects (CH4)
+- ✅ Battle system with CH3 wave melody and CH4 noise effects
+- ✅ APU power cycling between screens (buildings, battles, menu transitions)
+
 ## Future Work
 
-- **Sound/APU emulation** (4 audio channels, wave patterns)
 - **Save state functionality**
 - **Debugger interface** (memory viewer, breakpoints)
 - **Game Boy Color support**
