@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <chrono>
+#include <thread>
 #include "gameboy.h"
 #include "disassembler.h"
 #include <SDL3/SDL.h>
@@ -11,8 +13,240 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 
+constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
+#ifdef GBEMU_DEBUG
+constexpr int DISASM_PANEL_WIDTH = 300; // Width of disassembly panel
+constexpr int MEMORY_PANEL_WIDTH = 500; // Width of memory viewer panel
+constexpr int CPU_PANEL_HEIGHT = 200; // Height of CPU state panel
+#endif
+
+
+struct WindowLayout
+{
+    int game_x = 0;
+    int game_y = 0;
+    int game_width = 0;
+    int game_height = 0;
+    int window_width = 0;
+    int window_height = 0;
+    int center_x = 0;
+    int center_width = 0;
+    int center_height = 0;
+    // Debug-only — zero in release builds
+    int disasm_width = 0;
+    int cpu_height = 0;
+    int memory_width = 0;
+};
+
+
+// globals
+static GameBoy gameboy;
+static SDL_Window* window = nullptr;
+static SDL_Renderer* renderer = nullptr;
+static SDL_Texture* screen_texture = nullptr;
+static SDL_Gamepad* gamepad = nullptr;
+static SDL_AudioStream* audio_stream = nullptr;
+static SDL_AudioDeviceID audio_device = 0;
+static WindowLayout window_layout;
+
+WindowLayout compute_window_layout(int window_width, int window_height)
+{
+    WindowLayout layout;
+    layout.window_width = window_width;
+    layout.window_height = window_height;
+
+    #ifdef GBEMU_DEBUG
+    layout.disasm_width = DISASM_PANEL_WIDTH;
+    layout.memory_width = MEMORY_PANEL_WIDTH;
+    layout.cpu_height = CPU_PANEL_HEIGHT;
+    layout.center_x = layout.disasm_width;
+    layout.center_width = window_width - layout.disasm_width - layout.memory_width;
+    layout.center_height = window_height - layout.cpu_height;
+    #else
+    layout.center_x = 0;
+    layout.center_width = window_width;
+    layout.center_height = window_height;
+    #endif
+    
+    float gb_aspect = (float) SCREEN_WIDTH / (float) SCREEN_HEIGHT;
+    float center_aspect = (float) layout.center_width / (float) layout.center_height;
+
+    int scaled_w, scaled_h;
+    if (center_aspect > gb_aspect) {
+        // wider than GB → pillarbox (bars on sides)
+        scaled_h = layout.center_height;
+        scaled_w = (int)(scaled_h * gb_aspect);
+    } else {
+        // taller → letterbox (bars on top/bottom)
+        scaled_w = layout.center_width;
+        scaled_h = (int)(scaled_w / gb_aspect);
+    }
+    layout.game_width  = scaled_w;
+    layout.game_height = scaled_h;
+    layout.game_x = layout.center_x + (layout.center_width  - scaled_w) / 2;
+    layout.game_y = (layout.center_height - scaled_h) / 2;
+
+    return layout;
+}
+
+int init()
+{   
+        
+    // Initialize SDL with video, gamepad, and audio support
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO))
+    {
+        std::println(std::cerr, "SDL_Init failed: {}", SDL_GetError());
+        return 1;
+    }
+
+     // Open the first available gamepad
+    gamepad = nullptr;
+    int num_joysticks = 0;
+    SDL_JoystickID* joysticks = SDL_GetGamepads(&num_joysticks);
+    if (num_joysticks > 0)
+    {
+        gamepad = SDL_OpenGamepad(joysticks[0]);
+        if (gamepad)
+        {
+            std::println("Gamepad connected: {}", SDL_GetGamepadName(gamepad));
+        }
+    }
+    SDL_free(joysticks);
+    #ifdef GBEMU_DEBUG
+    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE + DISASM_PANEL_WIDTH + MEMORY_PANEL_WIDTH; // 1440
+    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE + CPU_PANEL_HEIGHT;       // 776
+    #else
+    int initial_window_width  = SCREEN_WIDTH * DISPLAY_SCALE;
+    int initial_window_height = SCREEN_HEIGHT * DISPLAY_SCALE;
+    #endif
+    // Compute window layout
+    window_layout = compute_window_layout(initial_window_width, initial_window_height);
+
+    window = SDL_CreateWindow(
+        "Game Boy Emulator",
+        window_layout.window_width, window_layout.window_height,
+        SDL_WINDOW_RESIZABLE
+    );
+    
+
+    
+    if (!window)
+    {
+        std::println(std::cerr, "Failed to create window: {}", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+    
+    #ifdef GBEMU_DEBUG
+    // Minimum: panels (800px) + at least 1x game width (160px) and 1x game height (144px) + cpu strip
+    SDL_SetWindowMinimumSize(window, DISASM_PANEL_WIDTH + MEMORY_PANEL_WIDTH + SCREEN_WIDTH, CPU_PANEL_HEIGHT + SCREEN_HEIGHT);
+    #else
+    SDL_SetWindowMinimumSize(window, SCREEN_WIDTH, SCREEN_HEIGHT);
+    #endif
+
+    // Create renderer
+    renderer = SDL_CreateRenderer(window, nullptr);
+    if (!renderer)
+    {
+        std::println(std::cerr, "Failed to create renderer: {}", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+    
+    SDL_SetRenderVSync(renderer, 0); // Disable VSync, we'll control frame rate manually
+    
+    // Create texture for Game Boy screen
+    screen_texture = SDL_CreateTexture(
+        renderer,
+        SDL_PIXELFORMAT_RGBA32,
+        SDL_TEXTUREACCESS_STREAMING,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT
+    );
+    
+    if (!screen_texture)
+    {
+        std::println(std::cerr, "Failed to create texture: {}", SDL_GetError());
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_SetTextureScaleMode(screen_texture, SDL_SCALEMODE_NEAREST);
+
+    // Initialize ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    
+    // Setup ImGui style and font scale
+    ImGui::StyleColorsDark();
+    io.FontGlobalScale = 1.3f;  // Make font 30% bigger
+    
+    // Setup Platform/Renderer backends
+    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer3_Init(renderer);
+    
+    //Initiate SDL Audio Stream
+    SDL_AudioSpec spec{};
+    spec.format = SDL_AUDIO_S16;
+    spec.channels = 2;
+    spec.freq = AUDIO_SAMPLE_RATE;
+
+    // Open the default playback device
+    audio_device = SDL_OpenAudioDevice(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+        &spec
+    );
+
+    if (!audio_device)
+    {
+        std::println(std::cerr, "Failed to open audio: {}", SDL_GetError());
+        return 1;
+    }
+
+    audio_stream = SDL_CreateAudioStream(&spec, &spec);
+
+    if(!audio_stream)
+    {
+        std::println(std::cerr, "Failed to create audio stream: {}", SDL_GetError());
+        return 1;
+    }
+
+    SDL_BindAudioStream(audio_device, audio_stream);
+    SDL_ResumeAudioDevice(audio_device);
+
+    return 0;
+
+}
+
+void shutdown()
+{
+
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+    
+    SDL_DestroyTexture(screen_texture);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    
+    if (gamepad)
+    {
+        SDL_CloseGamepad(gamepad);
+    }
+    
+    SDL_DestroyAudioStream(audio_stream);
+    SDL_CloseAudioDevice(audio_device);
+    
+    SDL_Quit();
+}
+
 // Handle keyboard input for Game Boy joypad
-void handle_input(SDL_Event& event, GameBoy& gameboy)
+void handle_input(SDL_Event& event)
 {
     if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
         return;
@@ -54,12 +288,13 @@ void handle_input(SDL_Event& event, GameBoy& gameboy)
     }
 
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad) {
-        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
+    if (prev & ~joypad)
+    {
+        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
 
-void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
+void handle_gamepad_input(SDL_Event& event)
 {
     if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.type != SDL_EVENT_GAMEPAD_BUTTON_UP)
         return;
@@ -101,8 +336,9 @@ void handle_gamepad_input(SDL_Event& event, GameBoy& gameboy)
     }
 
     // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad) {
-        gameboy.memory.io[0x0F] |= 0x10; // Set INT_JOYPAD in IF (0xFF0F)
+    if (prev & ~joypad)
+    {
+        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
     }
 }
 
@@ -117,19 +353,21 @@ int main(int argc, char** argv)
         return 1;
     }
     
-    const std::string rom_path = argv[1];
+    std::string const rom_path = argv[1];
     bool disassemble_mode = false;
     
     // Check for disassemble flag
-    if (argc >= 3)
+    bool headless_mode = false;
+
+    for (int i = 2; i < argc; ++i)
     {
-        std::string arg2 = argv[2];
-        if (arg2 == "--disassemble" || arg2 == "-d")
-        {
+        std::string arg = argv[i];
+        if (arg == "--disassemble" || arg == "-d")
             disassemble_mode = true;
-        }
+        else if (arg == "--headless")
+            headless_mode = true;
     }
-    
+
     // Check if file exists
     if (!std::filesystem::exists(rom_path))
     {
@@ -165,125 +403,80 @@ int main(int argc, char** argv)
         disassembler::disassemble_rom(rom, 0, rom.size());
         return 0;
     }
-    
+
     // Initialize Game Boy and load ROM
-    GameBoy gameboy;
     gameboy.load_rom(rom, rom_path);
-    
+
     std::println("ROM loaded: {} bytes", rom.size());
     std::println("Starting emulation...");
     std::println("");
-    
-    // Initialize SDL with video and gamepad support
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
+
+    // Headless mode: run without SDL, stop on pass/fail serial output or ext_ram result
+    if (headless_mode)
     {
-        std::println(std::cerr, "SDL_Init failed: {}", SDL_GetError());
-        return 1;
-    }
-    
-    // Open the first available gamepad
-    SDL_Gamepad* gamepad = nullptr;
-    int num_joysticks = 0;
-    SDL_JoystickID* joysticks = SDL_GetGamepads(&num_joysticks);
-    if (num_joysticks > 0)
-    {
-        gamepad = SDL_OpenGamepad(joysticks[0]);
-        if (gamepad)
+        gameboy.running = true;
+        constexpr int HEADLESS_TIMEOUT_FRAMES = 60 * 120; // 120 seconds max
+        // Signature written by blargg's init_text_out into ext_ram at offsets 1-3
+        // $A001=$DE, $A002=$B0, $A003=$61 — indicates a RAM-output test has initialised
+        auto ram_initialized = [&]() -> bool {
+            const auto& r = gameboy.memory.ext_ram;
+            return r.size() >= 8 && r[1] == 0xDE && r[2] == 0xB0 && r[3] == 0x61;
+        };
+
+        for (int frame = 0; frame < HEADLESS_TIMEOUT_FRAMES && gameboy.running; ++frame)
         {
-            std::println("Gamepad connected: {}", SDL_GetGamepadName(gamepad));
+            gameboy.step_frame();
+
+            // Serial-output tests (cpu_instrs, instr_timing, mem_timing)
+            const std::string& sout = gameboy.memory.serial_output;
+            if (sout.find("Passed") != std::string::npos ||
+                sout.find("passed") != std::string::npos ||
+                sout.find("Failed") != std::string::npos ||
+                sout.find("failed") != std::string::npos)
+            {
+                break;
+            }
+
+            // RAM-output tests (mem_timing-2, dmg_sound, oam_bug, halt_bug)
+            // ext_ram[0] = final_result: $80 = in progress, 0 = pass, other = fail
+            if (ram_initialized() && gameboy.memory.ext_ram[0] != 0x80)
+            {
+                // Print text output from ext_ram[4] onward (null-terminated string)
+                const char* text = reinterpret_cast<const char*>(gameboy.memory.ext_ram.data() + 4);
+                std::printf("%s\n", text);
+                fflush(stdout);
+                break;
+            }
         }
+        return 0;
     }
-    SDL_free(joysticks);
     
-    // Create window with space for debug panels
-    const int scale = 4; // 4x scaling for 160x144 screen
-    const int game_width = SCREEN_WIDTH * scale;   // 640
-    const int game_height = SCREEN_HEIGHT * scale; // 576
-    
-#ifdef GBEMU_DEBUG
-    const int disasm_width = 300;
-    const int game_x = disasm_width;
-    const int cpu_height = 200;
-    const int memory_width = 500;
-    const int window_width = game_width + memory_width + disasm_width;   // 1440
-    const int window_height = game_height + cpu_height;   // 776
-#else
-    const int game_x = 0;
-    const int window_width = game_width;
-    const int window_height = game_height;
-#endif
-    
-    SDL_Window* window = SDL_CreateWindow(
-        "Game Boy Emulator",
-        window_width, window_height,
-        0
-    );
-    
-    if (!window)
+    if(init() != 0)
     {
-        std::println(std::cerr, "Failed to create window: {}", SDL_GetError());
-        SDL_Quit();
+        std::println(std::cerr, "Failed to initialize SDL or ImGui.");
+        shutdown();
         return 1;
     }
-    
-    // Create renderer
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (!renderer)
-    {
-        std::println(std::cerr, "Failed to create renderer: {}", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-    
-    SDL_SetRenderVSync(renderer, 0); // Disable VSync, we'll control frame rate manually
-    
-    // Create texture for Game Boy screen
-    SDL_Texture* screen_texture = SDL_CreateTexture(
-        renderer,
-        SDL_PIXELFORMAT_RGBA32,
-        SDL_TEXTUREACCESS_STREAMING,
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT
-    );
-    
-    if (!screen_texture)
-    {
-        std::println(std::cerr, "Failed to create texture: {}", SDL_GetError());
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-    
-    // Initialize ImGui
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    
-    // Setup ImGui style and font scale
-    ImGui::StyleColorsDark();
-    io.FontGlobalScale = 1.3f;  // Make font 30% bigger
-    
-    // Setup Platform/Renderer backends
-    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer3_Init(renderer);
-    
+
+    // After init(), before the main loop:
+    // Pre-fill with 2 frames of silence to establish audio buffer headroom
+    const int prefill_samples = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * 2; // stereo
+    std::vector<int16_t> silence(prefill_samples, 0);
+    SDL_PutAudioStreamData(audio_stream, silence.data(), silence.size() * sizeof(int16_t));
+
     // Main loop
     bool quit = false;
     gameboy.running = true;
     
     // Frame timing for 60 FPS
-    const double target_frame_time = 1000.0 / 59.7; // Game Boy runs at ~59.7 Hz
-    Uint64 last_frame_time = SDL_GetTicks();
-    
+    auto next_frame = std::chrono::steady_clock::now();
+    const auto frame_duration = std::chrono::duration<double>(1.0 / FRAME_RATE);
     while (!quit && gameboy.running)
-    {
-        Uint64 frame_start = SDL_GetTicks();
-        
+    {        
         // Handle events
         SDL_Event event;
+        int resize_w = 0, resize_h = 0;
+
         while (SDL_PollEvent(&event))
         {
             ImGui_ImplSDL3_ProcessEvent(&event);
@@ -314,19 +507,39 @@ int main(int argc, char** argv)
                     gamepad = nullptr;
                 }
             }
+            else if (event.type == SDL_EVENT_WINDOW_RESIZED)
+            {
+                resize_w = event.window.data1;
+                resize_h = event.window.data2;
+            }
             else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || 
                      event.type == SDL_EVENT_GAMEPAD_BUTTON_UP)
             {
-                handle_gamepad_input(event, gameboy);
+                handle_gamepad_input(event);
             }
             else
             {
-                handle_input(event, gameboy);
+                handle_input(event);
             }
         }
         
+        if (resize_w > 0)
+        {
+            window_layout = compute_window_layout(resize_w, resize_h);
+            resize_w = resize_h = 0;
+            next_frame = std::chrono::steady_clock::now(); // reset after resize
+
+        }
         // Run one frame of emulation (~70224 cycles)
         gameboy.step_frame();
+        
+        SDL_PutAudioStreamData(
+            audio_stream,
+            gameboy.apu.sample_buffer.data(),
+            gameboy.apu.sample_buffer.size() * sizeof(int16_t)
+        );
+        
+        gameboy.apu.sample_buffer.clear();
         
         // Update screen texture if frame is ready
         if (gameboy.ppu.frame_ready)
@@ -347,50 +560,51 @@ int main(int argc, char** argv)
         
 #ifdef GBEMU_DEBUG
         // CPU State window - fixed below game screen
-        ImGui::SetNextWindowPos(ImVec2(disasm_width, game_height), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(game_width, cpu_height), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(window_layout.center_x, window_layout.center_height), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(window_layout.center_width, window_layout.cpu_height), ImGuiCond_Always);
         ImGui::Begin("CPU State", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        ImGui::Text("PC: 0x%04X", gameboy.cpu.pc);
-        ImGui::SameLine(150);
-        ImGui::Text("SP: 0x%04X", gameboy.cpu.sp);
-        ImGui::SameLine(300);
-        ImGui::Text("IME: %s", gameboy.cpu.ime ? "ON" : "OFF");
-        ImGui::SameLine(450);
-        ImGui::Text("Instructions: %llu", gameboy.cpu.instructions_executed);
+        if (ImGui::BeginTable("cpu_row1", 4, ImGuiTableFlags_SizingStretchSame))
+        {
+            ImGui::TableNextColumn(); ImGui::Text("PC: 0x%04X", gameboy.cpu.pc);
+            ImGui::TableNextColumn(); ImGui::Text("SP: 0x%04X", gameboy.cpu.sp);
+            ImGui::TableNextColumn(); ImGui::Text("IME: %s", gameboy.cpu.ime ? "ON" : "OFF");
+            ImGui::TableNextColumn(); ImGui::Text("Instructions: %llu", gameboy.cpu.instructions_executed);
+            ImGui::EndTable();
+        }
         
         ImGui::Separator();
         
-        ImGui::Text("AF: 0x%04X  (A: 0x%02X  F: 0x%02X)", 
-            gameboy.cpu.af.pair, gameboy.cpu.af.high, gameboy.cpu.af.low);
-        ImGui::SameLine(300);
-        ImGui::Text("BC: 0x%04X  (B: 0x%02X  C: 0x%02X)", 
-            gameboy.cpu.bc.pair, gameboy.cpu.bc.high, gameboy.cpu.bc.low);
-        
-        ImGui::Text("DE: 0x%04X  (D: 0x%02X  E: 0x%02X)", 
-            gameboy.cpu.de.pair, gameboy.cpu.de.high, gameboy.cpu.de.low);
-        ImGui::SameLine(300);
-        ImGui::Text("HL: 0x%04X  (H: 0x%02X  L: 0x%02X)", 
-            gameboy.cpu.hl.pair, gameboy.cpu.hl.high, gameboy.cpu.hl.low);
+        if (ImGui::BeginTable("cpu_regs", 2, ImGuiTableFlags_SizingStretchSame))
+{
+        ImGui::TableNextColumn(); ImGui::Text("AF: 0x%04X  (A: 0x%02X  F: 0x%02X)", gameboy.cpu.af.pair, gameboy.cpu.af.high, gameboy.cpu.af.low);
+        ImGui::TableNextColumn(); ImGui::Text("BC: 0x%04X  (B: 0x%02X  C: 0x%02X)", gameboy.cpu.bc.pair, gameboy.cpu.bc.high, gameboy.cpu.bc.low);
+        ImGui::TableNextColumn(); ImGui::Text("DE: 0x%04X  (D: 0x%02X  E: 0x%02X)", gameboy.cpu.de.pair, gameboy.cpu.de.high, gameboy.cpu.de.low);
+        ImGui::TableNextColumn(); ImGui::Text("HL: 0x%04X  (H: 0x%02X  L: 0x%02X)", gameboy.cpu.hl.pair, gameboy.cpu.hl.high, gameboy.cpu.hl.low);
+        ImGui::EndTable();
+}
         
         ImGui::Separator();
         ImGui::Text("Flags:  Z: %d  N: %d  H: %d  C: %d",
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_ZERO),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_SUBTRACT),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_HALF_CARRY),
-            cpu::get_flag(gameboy.cpu.af.low, cpu::FLAG_CARRY));
+            get_flag(gameboy.cpu.af.low, FLAG_ZERO),
+            get_flag(gameboy.cpu.af.low, FLAG_SUBTRACT),
+            get_flag(gameboy.cpu.af.low, FLAG_HALF_CARRY),
+            get_flag(gameboy.cpu.af.low, FLAG_CARRY));
         ImGui::End();
         
         // Memory viewer - fixed to the right
-        ImGui::SetNextWindowPos(ImVec2(disasm_width + game_width, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(memory_width, window_height), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(window_layout.center_x + window_layout.center_width, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(window_layout.memory_width, window_layout.window_height), ImGuiCond_Always);
         ImGui::Begin("Memory Viewer", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
         ImGui::Text("Current Byte at PC: 0x%02X", gameboy.memory.read(gameboy.cpu.pc));
         ImGui::Separator();
         
         // Display memory around PC
         ImGui::BeginChild("MemoryScroll");
-        uint16_t start_addr = (gameboy.cpu.pc & 0xFFF0); // Align to 16 bytes
-        for (int row = -8; row < 32; row++)
+        float line_h = ImGui::GetTextLineHeightWithSpacing();
+        int visible_rows = std::max(4, (int)(ImGui::GetContentRegionAvail().y / line_h));
+        int half = visible_rows / 2;
+        uint16_t start_addr = (gameboy.cpu.pc & 0xFFF0);
+        for (int row = -half; row < half; row++)
         {
             uint16_t addr = start_addr + (row * 16);
             ImGui::Text("%04X:", addr);
@@ -423,42 +637,39 @@ int main(int argc, char** argv)
         ImGui::End();
 
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(disasm_width, window_height), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(window_layout.disasm_width, window_layout.window_height), ImGuiCond_Always);
         ImGui::Begin("Disassembly", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
         ImGui::BeginChild("DisasmScroll");
-
         const auto& history = gameboy.cpu.pc_history;
-        
-        if(!history.empty())
-        {
-            size_t start = history.size() > 50 ? history.size() - 50 : 0;
-            for (size_t i = start; i < history.size(); i++)
-            {
-                uint16_t addr = history[i];
-                uint8_t bytes[3] = {
-                    gameboy.memory.read(addr),
-                    gameboy.memory.read(addr + 1),
-                    gameboy.memory.read(addr + 2)
-                };
+        line_h = ImGui::GetTextLineHeightWithSpacing();
+        int visible_lines = std::max(4, (int)(ImGui::GetContentRegionAvail().y / line_h));
+        size_t start = history.size() > (size_t)visible_lines ? history.size() - visible_lines : 0;
 
-                auto instr = disassembler::decode_instruction(bytes, 3);
-                std::string line = std::format("{:04X}  {} {}", addr, instr.mnemonic, instr.operands);
-                bool is_current = (i == history.size() - 1);
-                if (is_current)
-                {
-                    ImVec2 pos = ImGui::GetCursorScreenPos();
-                    ImVec2 size = ImGui::CalcTextSize(line.c_str());
-                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-                }
-                ImGui::TextUnformatted(line.c_str());
-                if(is_current)
-                {
-                    ImGui::PopStyleColor();
-                    ImGui::SetScrollHereY(1.0f);
-                }
+        for (size_t i = start; i < history.size(); i++)
+        {
+            uint16_t addr = history[i];
+            uint8_t bytes[3] = {
+                gameboy.memory.read(addr),
+                gameboy.memory.read(addr + 1),
+                gameboy.memory.read(addr + 2)
+            };
+
+            auto instr = disassembler::decode_instruction(bytes, 3);
+            std::string line = std::format("{:04X}  {} {}", addr, instr.mnemonic, instr.operands);
+            bool is_current = (i == history.size() - 1);
+            if (is_current)
+            {
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                ImVec2 size = ImGui::CalcTextSize(line.c_str());
+                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             }
-    
+            ImGui::TextUnformatted(line.c_str());
+            if(is_current)
+            {
+                ImGui::PopStyleColor();
+                ImGui::SetScrollHereY(1.0f);
+            }
         }
 
         ImGui::EndChild();
@@ -471,40 +682,27 @@ int main(int argc, char** argv)
         SDL_RenderClear(renderer);
         
         // Render Game Boy screen in top-left corner
-        SDL_FRect game_rect = { (float)game_x, 0, (float)game_width, (float)game_height };
+        SDL_FRect game_rect = { (float)window_layout.game_x, (float)window_layout.game_y, (float)window_layout.game_width, (float)window_layout.game_height };
         SDL_RenderTexture(renderer, screen_texture, nullptr, &game_rect);
         
         // Render ImGui
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
         
         SDL_RenderPresent(renderer);
-        
-        // Frame rate limiting to ~60 FPS
-        Uint64 frame_end = SDL_GetTicks();
-        double elapsed = frame_end - frame_start;
-        if (elapsed < target_frame_time)
-        {
-            SDL_Delay((Uint32)(target_frame_time - elapsed));
-        }
-    }
-    
-    // Cleanup
-    gameboy.memory.save_battery(rom_path); // Save battery RAM if applicable
 
-    ImGui_ImplSDLRenderer3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
-    
-    SDL_DestroyTexture(screen_texture);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    
-    if (gamepad)
-    {
-        SDL_CloseGamepad(gamepad);
+        next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(frame_duration);
+
+        auto now = std::chrono::steady_clock::now();
+        if (next_frame < now)
+            next_frame = now;
+
+        std::this_thread::sleep_until(next_frame);
+
     }
+
+     gameboy.memory.save_battery(rom_path); // Save battery RAM if applicable
     
-    SDL_Quit();
+    shutdown();
     
     return 0;
 }

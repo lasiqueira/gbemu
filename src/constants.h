@@ -6,11 +6,6 @@ constexpr int CPU_FREQUENCY = 4194304;        // 4.194304 MHz (cycles per second
 constexpr double FRAME_RATE = 59.7;           // ~59.7 Hz (frames per second)
 constexpr int CYCLES_PER_FRAME = static_cast<int>(CPU_FREQUENCY / FRAME_RATE);  // ~70224 cycles
 
-// LCD timing constants
-constexpr int CYCLES_PER_SCANLINE = 456; // 456 cycles per scanline
-constexpr int SCANLINES_PER_FRAME = 154; // 154 scanlines per frame
-constexpr int VBLANK_SCANLINE = 144; // V-Blank starts at scanline 144
-
 // I/O Register Addresses
 constexpr uint16_t IO_JOYPAD = 0xFF00; // Joypad
 constexpr uint16_t IO_SB     = 0xFF01; // Serial Transfer Data
@@ -47,6 +42,8 @@ constexpr uint16_t ADDR_HRAM_START     = 0xFF80; // Start of high RAM
 // MBC write-decode range boundaries
 constexpr uint16_t MBC_RAM_ENABLE_END  = 0x2000; // End of RAM enable register range
 constexpr uint16_t MBC_RAM_BANK_END    = 0x6000; // End of RAM bank number register range
+constexpr uint8_t MBC_RAM_ENABLE       = 0x0A;   // Value to enable RAM on MBC1/MBC2/MBC3
+
 
 // ROM and RAM bank sizes
 constexpr uint32_t ROM_BANK_SIZE       = 0x4000; // 16 KiB per ROM bank
@@ -61,6 +58,9 @@ constexpr uint16_t ROM_HEADER_RAM_SIZE  = 0x0149; // RAM size code
 constexpr uint16_t MBC2_RAM_SIZE       = 512;    // MBC2 has 512 half-byte entries
 constexpr uint16_t MBC2_RAM_MASK       = 0x01FF; // MBC2 RAM address mask
 
+// MBC5
+constexpr uint16_t MBC5_ROM_HIGH_ADDR = 0x3000; // MBC5 ROM bank register low/high split
+
 // OAM DMA
 constexpr int      OAM_DMA_LENGTH      = 0xA0;   // 160 bytes transferred by OAM DMA
 
@@ -73,6 +73,7 @@ constexpr uint8_t INT_LCD_STAT = 0x02; // Bit 1: LCD STAT
 constexpr uint8_t INT_TIMER = 0x04; // Bit 2: Timer
 constexpr uint8_t INT_SERIAL = 0x08; // Bit 3: Serial
 constexpr uint8_t INT_JOYPAD = 0x10; // Bit 4: Joypad
+constexpr uint8_t INT_ALL_MASK = 0x1F; // Mask for all interrupt bits
 
 // Interrupt vectors
 constexpr uint16_t INT_VECTOR_VBLANK = 0x0040;
@@ -80,3 +81,8 @@ constexpr uint16_t INT_VECTOR_LCD_STAT = 0x0048;
 constexpr uint16_t INT_VECTOR_TIMER = 0x0050;
 constexpr uint16_t INT_VECTOR_SERIAL = 0x0058;
 constexpr uint16_t INT_VECTOR_JOYPAD = 0x0060;
+
+// CPU constants
+constexpr uint16_t CPU_INITIAL_PC = 0x0100; // Initial program counter value after boot ROM
+constexpr uint16_t CPU_INITIAL_SP = 0xFFFE; // Initial stack pointer value after boot ROM
+

@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 
+struct APU; // Forward declaration
+
 enum class MBCType 
     {
         None,
@@ -43,19 +45,24 @@ struct Memory {
     uint8_t oam[0xA0]     = {}; // $FE00-$FE9F: Sprite Attribute Table
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
-    uint8_t ie_register   = 0;  // $FFFF: Interrupt Enable
+    uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
     
+    APU* apu = nullptr; // Pointer to APU for audio register access
+
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
     bool has_battery = false;
     bool has_rtc = false;
 
+    // Serial output buffer (used in headless mode)
+    std::string serial_output;
+
     // Joypad state
     uint8_t joypad_state = 0xFF; // Current button states (0 = pressed, 1 = released)
 
     // Timer state
-    int div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
-    int tima_cycles = 0;  // Cycle accumulator for TIMA increments
+    uint16_t div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
+    uint16_t tima_cycles = 0;  // Cycle accumulator for TIMA increments
 
     // Advance timer counters by the given number of CPU cycles
     void tick_timers(int cycles);
