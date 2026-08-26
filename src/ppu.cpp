@@ -159,45 +159,35 @@ void PPU::render_scanline(Memory& memory)
 
     bool window_rendered_this_line = false;
     
+    TileBytes cached_tile_bytes = {0, 0};
+    int cached_tile_x = -1;
+    bool cached_was_window = false;
+
     // Render
     for (int x = 0; x < SCREEN_WIDTH; x++)
     {
-        uint8_t bg_color;
         
         bool draw_window = window_visible_this_line && (x >= (wx - WINDOW_X_OFFSET));
+        uint8_t pixel_x = draw_window ? x - (wx - WINDOW_X_OFFSET) : (x + scx) & 0xFF;
+        uint8_t pixel_y = draw_window ? window_line_counter : (scanline + scy) & 0xFF;
+        int tile_x = pixel_x / 8;
+        
         if(draw_window)
         {
-            uint8_t pixel_x = x - (wx - WINDOW_X_OFFSET);
-            uint8_t pixel_y = window_line_counter;
-
-            bg_color = get_tile_pixel(
-                pixel_x,
-                pixel_y,
-                window_tile_map, 
-                tile_data_base, 
-                signed_tile_ids, 
-                bgp,
-                memory
-            );
-            
             window_rendered_this_line = true;
         } 
-        else 
+        
+        if (tile_x != cached_tile_x || draw_window != cached_was_window)
         {
-            // Calculate tile coordinates with scrolling
-            uint8_t pixel_y = (scanline + scy) & 0xFF;
-            uint8_t pixel_x = (x + scx) & 0xFF;
-            
-            bg_color = get_tile_pixel(
-                pixel_x,
-                pixel_y,
-                bg_tile_map, 
-                tile_data_base, 
-                signed_tile_ids, 
-                bgp,
-                memory
-            );
+            cached_tile_bytes = fetch_tile_row(pixel_x, pixel_y, draw_window ? window_tile_map : bg_tile_map, tile_data_base, signed_tile_ids, memory);
+            cached_tile_x = tile_x;
+            cached_was_window = draw_window;
         }
+
+        int bit_pos = 7 - (pixel_x % 8);
+        uint8_t color_id = ((cached_tile_bytes.byte2 >> bit_pos) & 1) << 1 | ((cached_tile_bytes.byte1 >> bit_pos) & 1);
+
+        uint8_t bg_color = (bgp >> (color_id * 2)) & 0x03;
 
         int sprite_color = -1;
         uint8_t sprite_priority = 0; // Stores sprite attributes for priority check
@@ -296,44 +286,6 @@ void PPU::request_interrupt(Memory& memory, uint8_t interrupt_bit)
     uint8_t if_reg = memory.read_io_raw(IO_IF);
     if_reg |= interrupt_bit;
     memory.write_io_raw(IO_IF, if_reg);
-}
-
-uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory)
-{
-   
-    uint8_t tile_y = pixel_y / 8;
-    uint8_t tile_x = pixel_x / 8;
-    uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
-    
-    uint8_t tile_id = memory.read_vram(tile_map_addr);
-    
-    // Get tile data address
-    uint16_t tile_addr;
-    if (signed_tile_ids)
-    {
-        int8_t signed_id = static_cast<int8_t>(tile_id);
-        tile_addr = tile_data_base + (signed_id + 128) * BYTES_PER_TILE;
-    }
-    else
-    {
-        tile_addr = tile_data_base + tile_id * BYTES_PER_TILE;
-    }
-    
-    // Get pixel within tile
-    uint8_t tile_pixel_y = pixel_y % 8;
-    uint8_t tile_pixel_x = pixel_x % 8;
-    
-    // Each tile row is 2 bytes
-    uint16_t tile_row_addr = tile_addr + tile_pixel_y * 2;
-    uint8_t byte1 = memory.read_vram(tile_row_addr);
-    uint8_t byte2 = memory.read_vram(tile_row_addr + 1);
-    
-    // Get color from pixel (bit 7 = leftmost pixel)
-    int bit_pos = 7 - tile_pixel_x;
-    uint8_t color_id = ((byte2 >> bit_pos) & 1) << 1 | ((byte1 >> bit_pos) & 1);
-    
-    // Apply palette
-    return (palette >> (color_id * 2)) & 0x03;
 }
 
 void PPU::scan_oam(Memory& memory)
@@ -456,4 +408,36 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
 
     return palette_color;
+}
+
+TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory)
+{
+    uint8_t tile_y = pixel_y / 8;
+    uint8_t tile_x = pixel_x / 8;
+    uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
+    
+    uint8_t tile_id = memory.read_vram(tile_map_addr);
+    
+    // Get tile data address
+    uint16_t tile_addr;
+    if (signed_tile_ids)
+    {
+        int8_t signed_id = static_cast<int8_t>(tile_id);
+        tile_addr = tile_data_base + (signed_id + 128) * BYTES_PER_TILE;
+    }
+    else
+    {
+        tile_addr = tile_data_base + tile_id * BYTES_PER_TILE;
+    }
+    
+    // Get pixel within tile
+    uint8_t tile_pixel_y = pixel_y % 8;
+    
+    // Each tile row is 2 bytes
+    uint16_t tile_row_addr = tile_addr + tile_pixel_y * 2;
+    TileBytes row_bytes;
+    row_bytes.byte1 = memory.read_vram(tile_row_addr);
+    row_bytes.byte2 = memory.read_vram(tile_row_addr + 1);
+    
+    return row_bytes;
 }

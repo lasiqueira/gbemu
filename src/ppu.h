@@ -91,6 +91,12 @@ constexpr Color GB_PALETTE[4] = {
     {0x0F, 0x38, 0x0F}   // Darkest
 };
 
+struct TileBytes
+{
+    uint8_t byte1;
+    uint8_t byte2;
+};
+
 struct PPU
 {
     // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
@@ -124,11 +130,10 @@ struct PPU
     // Request interrupt
     void request_interrupt(Memory& memory, uint8_t interrupt_bit);
 
-    // Get the color index of a pixel from a tile, given its coordinates and tile data
-    uint8_t get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory);
-
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 
     int get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory);
+
+    TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 };
