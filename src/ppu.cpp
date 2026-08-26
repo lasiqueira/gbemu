@@ -163,7 +163,6 @@ void PPU::render_scanline(Memory& memory)
     int cached_tile_x = -1;
     bool cached_was_window = false;
 
-    std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
     int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
     for (int i = 0; i < visible_sprite_count; i++)
     {
@@ -210,8 +209,15 @@ void PPU::render_scanline(Memory& memory)
 
         uint8_t bg_color = (bgp >> (color_id * 2)) & 0x03;
 
-        int sprite_color = sprite_line[x].present ? sprite_line[x].color : -1;
-        uint8_t sprite_priority = sprite_line[x].priority;
+        int sprite_color = -1;
+        uint8_t sprite_priority = 0;
+        
+        if (sprite_line[x].present)
+        {
+            sprite_color = sprite_line[x].color;
+            sprite_priority = sprite_line[x].priority;
+            sprite_line[x].present = false; // Reset for next scanline
+        }
 
         uint8_t final_color;
         if(sprite_color == -1)

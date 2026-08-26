@@ -129,6 +129,8 @@ struct PPU
 
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
 
+    std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
+
     PPUMode mode = PPUMode::OAMSearch;
     uint8_t scanline = 0;            // Current scanline (0-153)
     uint8_t window_line_counter = 0; // Track which window line to draw
