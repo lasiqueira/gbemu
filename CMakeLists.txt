@@ -25,8 +25,7 @@ if(MSVC)
 endif()
 # Add march=native flag for all platforms
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
-    add_compile_options(-march=native $<$<NOT:$<CONFIG:Debug>>:-O3> $<$<NOT:$<CONFIG:Debug>>:-flto=thin>)
-    add_link_options($<$<NOT:$<CONFIG:Debug>>:-flto=thin>)
+    add_compile_options(-march=native $<$<NOT:$<CONFIG:Debug>>:/clang:-O3> $<$<NOT:$<CONFIG:Debug>>:-flto=thin>)
 elseif(MSVC)
     # /GL enables whole-program optimization; /LTCG enables LTO at link time; both non-Debug only
     add_compile_options(/arch:AVX2 $<$<NOT:$<CONFIG:Debug>>:/O2> $<$<NOT:$<CONFIG:Debug>>:/GL>)

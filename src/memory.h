@@ -85,4 +85,16 @@ struct Memory {
     // Save and load battery-backed RAM (for cartridges with batteries)
     void save_battery(const std::string& rom_path);
     void load_battery(const std::string& rom_path);
+
+    // Read a byte from VRAM (used for PPU access)
+    uint8_t read_vram(uint16_t addr) const;
+
+    // Read a byte from OAM (used for PPU access)
+    uint8_t read_oam(uint16_t addr) const;
+
+    // Read a byte from I/O registers without side effects. Not to use for joypad or audio registers, as they have side effects on read.
+    uint8_t read_io_raw(uint16_t addr) const;
+
+    // Write a byte to I/O registers without side effects. Not to use for joypad or audio registers, as they have side effects on write.
+    void write_io_raw(uint16_t addr, uint8_t value);
 };

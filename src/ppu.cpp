@@ -5,7 +5,7 @@
 
 void PPU::step(int cycles, Memory& memory)
 {
-    uint8_t lcdc = memory.read(IO_LCDC);
+    uint8_t lcdc = memory.read_io_raw(IO_LCDC);
     
     // If LCD is disabled, reset PPU state and output white screen
     if (!(lcdc & LCDC_ENABLE))
@@ -17,7 +17,7 @@ void PPU::step(int cycles, Memory& memory)
             mode_cycles = 0;
             scanline = 0;
             window_line_counter = 0;
-            memory.write(IO_LY, 0);
+            memory.write_io_raw(IO_LY, 0);
             framebuffer.fill(0);
             update_rgba_buffer();
             frame_ready = true;
@@ -52,11 +52,11 @@ void PPU::step(int cycles, Memory& memory)
             {
                 mode_cycles -= MODE_0_CYCLES;
                 scanline++;
-                memory.write(IO_LY, scanline);
+                memory.write_io_raw(IO_LY, scanline);
                 
                 // Check IO_LYC=IO_LY coincidence
-                uint8_t lyc = memory.read(IO_LYC);
-                uint8_t stat = memory.read(IO_STAT);
+                uint8_t lyc = memory.read_io_raw(IO_LYC);
+                uint8_t stat = memory.read_io_raw(IO_STAT);
                 if (scanline == lyc)
                 {
                     stat |= STAT_LYC_FLAG;
@@ -69,7 +69,7 @@ void PPU::step(int cycles, Memory& memory)
                 {
                     stat &= ~STAT_LYC_FLAG;
                 }
-                memory.write(IO_STAT, stat);
+                memory.write_io_raw(IO_STAT, stat);
                 
                 if (scanline >= SCREEN_HEIGHT)
                 {
@@ -91,11 +91,11 @@ void PPU::step(int cycles, Memory& memory)
             {
                 mode_cycles -= SCANLINE_CYCLES;
                 scanline++;
-                memory.write(IO_LY, scanline);
+                memory.write_io_raw(IO_LY, scanline);
                 
                 // Check IO_LYC=IO_LY coincidence
-                uint8_t lyc = memory.read(IO_LYC);
-                uint8_t stat = memory.read(IO_STAT);
+                uint8_t lyc = memory.read_io_raw(IO_LYC);
+                uint8_t stat = memory.read_io_raw(IO_STAT);
                 if (scanline == lyc)
                 {
                     stat |= STAT_LYC_FLAG;
@@ -108,14 +108,14 @@ void PPU::step(int cycles, Memory& memory)
                 {
                     stat &= ~STAT_LYC_FLAG;
                 }
-                memory.write(IO_STAT, stat);
+                memory.write_io_raw(IO_STAT, stat);
                 
                 if (scanline >= SCANLINES_PER_FRAME)
                 {
                     // Start new frame
                     scanline = 0;
                     window_line_counter = 0;
-                    memory.write(IO_LY, scanline);
+                    memory.write_io_raw(IO_LY, scanline);
                     set_mode(PPUMode::OAMSearch, memory);
                 }
             }
@@ -125,7 +125,7 @@ void PPU::step(int cycles, Memory& memory)
 
 void PPU::render_scanline(Memory& memory)
 {
-    uint8_t lcdc = memory.read(IO_LCDC);
+    uint8_t lcdc = memory.read_io_raw(IO_LCDC);
     
     bool background_enabled = lcdc & LCDC_BG_ENABLE;
     bool window_enabled = lcdc & LCDC_WINDOW_ENABLE;
@@ -139,13 +139,13 @@ void PPU::render_scanline(Memory& memory)
         return;
     }
     
-    uint8_t scy = memory.read(IO_SCY);
-    uint8_t scx = memory.read(IO_SCX);
+    uint8_t scy = memory.read_io_raw(IO_SCY);
+    uint8_t scx = memory.read_io_raw(IO_SCX);
     // Background
-    uint8_t bgp = memory.read(IO_BGP);
+    uint8_t bgp = memory.read_io_raw(IO_BGP);
     // Window 
-    uint8_t wy = memory.read(IO_WY);
-    uint8_t wx = memory.read(IO_WX);
+    uint8_t wy = memory.read_io_raw(IO_WY);
+    uint8_t wx = memory.read_io_raw(IO_WX);
 
     bool window_visible_this_line = window_enabled && (scanline >= wy);
 
@@ -264,9 +264,9 @@ void PPU::set_mode(PPUMode new_mode, Memory& memory)
 {
     mode = new_mode;
     
-    uint8_t stat = memory.read(IO_STAT);
+    uint8_t stat = memory.read_io_raw(IO_STAT);
     stat = (stat & ~STAT_MODE_MASK) | static_cast<uint8_t>(new_mode);
-    memory.write(IO_STAT, stat);
+    memory.write_io_raw(IO_STAT, stat);
     
     // Request IO_STAT interrupt if enabled
     bool request_stat_int = false;
@@ -293,9 +293,9 @@ void PPU::set_mode(PPUMode new_mode, Memory& memory)
 
 void PPU::request_interrupt(Memory& memory, uint8_t interrupt_bit)
 {
-    uint8_t if_reg = memory.read(IO_IF);
+    uint8_t if_reg = memory.read_io_raw(IO_IF);
     if_reg |= interrupt_bit;
-    memory.write(IO_IF, if_reg);
+    memory.write_io_raw(IO_IF, if_reg);
 }
 
 uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory)
@@ -305,7 +305,7 @@ uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_
     uint8_t tile_x = pixel_x / 8;
     uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
     
-    uint8_t tile_id = memory.read(tile_map_addr);
+    uint8_t tile_id = memory.read_vram(tile_map_addr);
     
     // Get tile data address
     uint16_t tile_addr;
@@ -325,8 +325,8 @@ uint8_t PPU::get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_
     
     // Each tile row is 2 bytes
     uint16_t tile_row_addr = tile_addr + tile_pixel_y * 2;
-    uint8_t byte1 = memory.read(tile_row_addr);
-    uint8_t byte2 = memory.read(tile_row_addr + 1);
+    uint8_t byte1 = memory.read_vram(tile_row_addr);
+    uint8_t byte2 = memory.read_vram(tile_row_addr + 1);
     
     // Get color from pixel (bit 7 = leftmost pixel)
     int bit_pos = 7 - tile_pixel_x;
@@ -340,7 +340,7 @@ void PPU::scan_oam(Memory& memory)
 {
     visible_sprite_count = 0;
 
-    uint8_t lcdc = memory.read(IO_LCDC);
+    uint8_t lcdc = memory.read_io_raw(IO_LCDC);
 
     // If sprites are disabled, skip scanning OAM
     if(!(lcdc & LCDC_OBJ_ENABLE))
@@ -356,10 +356,10 @@ void PPU::scan_oam(Memory& memory)
         uint16_t sprite_addr = OAM_BASE + (i * 4);
 
         // Read sprite attributes from OAM
-        uint8_t y = memory.read(sprite_addr);
-        uint8_t x = memory.read(sprite_addr + 1);
-        uint8_t tile = memory.read(sprite_addr + 2);
-        uint8_t attributes = memory.read(sprite_addr + 3);
+        uint8_t y = memory.read_oam(sprite_addr);
+        uint8_t x = memory.read_oam(sprite_addr + 1);
+        uint8_t tile = memory.read_oam(sprite_addr + 2);
+        uint8_t attributes = memory.read_oam(sprite_addr + 3);
 
         if(y == 0 || y >= SCREEN_HEIGHT + SPRITE_Y_OFFSET) continue; // Sprite is off-screen vertically
 
@@ -401,7 +401,7 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET); // Adjust for sprite offset
 
     // Determine sprite height from IO_LCDC
-    uint8_t lcdc = memory.read(IO_LCDC);
+    uint8_t lcdc = memory.read_io_raw(IO_LCDC);
     int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
 
     // Handle Y flip
@@ -437,8 +437,8 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     uint16_t tile_addr = ADDR_VRAM_START + (tile_index * BYTES_PER_TILE);
     // Each tile row is 2 bytes
     uint16_t tile_row_addr = tile_addr + (pixel_y * 2);
-    uint8_t byte1 = memory.read(tile_row_addr);
-    uint8_t byte2 = memory.read(tile_row_addr + 1);
+    uint8_t byte1 = memory.read_vram(tile_row_addr);
+    uint8_t byte2 = memory.read_vram(tile_row_addr + 1);
 
     // Get color from pixel (bit 7 = leftmost pixel)
     int bit_pos = 7 - pixel_x;
@@ -451,7 +451,7 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     }
 
     // Apply palette
-    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read(IO_OBP1) : memory.read(IO_OBP0);
+    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read_io_raw(IO_OBP1) : memory.read_io_raw(IO_OBP0);
 
     uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
 
