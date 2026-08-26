@@ -91,6 +91,21 @@ constexpr Color GB_PALETTE[4] = {
     {0x0F, 0x38, 0x0F}   // Darkest
 };
 
+constexpr uint32_t pack_rgba32(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
+{
+    return (static_cast<uint32_t>(r)) 
+        |  (static_cast<uint32_t>(g) << 8)
+        |  (static_cast<uint32_t>(b) << 16)
+        |  (static_cast<uint32_t>(a) << 24);
+}
+
+constexpr uint32_t GB_PALETTE_RGBA32[4] = {
+    pack_rgba32(0x9B, 0xBC, 0x0F), // Lightest
+    pack_rgba32(0x8B, 0xAC, 0x0F), // Light
+    pack_rgba32(0x30, 0x62, 0x30), // Dark
+    pack_rgba32(0x0F, 0x38, 0x0F)  // Darkest
+};
+
 struct TileBytes
 {
     uint8_t byte1;
@@ -110,8 +125,7 @@ struct PPU
     // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
     std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT> framebuffer = {};
     
-    // RGBA framebuffer for rendering (4 bytes per pixel)
-    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT * 4> rgba_buffer = {};
+    std::array<uint32_t, SCREEN_WIDTH * SCREEN_HEIGHT> rgba_buffer = {};
 
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
 

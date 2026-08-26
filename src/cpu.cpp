@@ -590,7 +590,7 @@ int CPU::ccf()
 
 int CPU::halt(Memory& memory)
 {
-    uint8_t pending = memory.read(0xFF0F) & memory.read(0xFFFF) & 0x1F;
+    uint8_t pending = memory.read_io_raw(IO_IF) & memory.ie_register & INT_ALL_MASK;
     if(!ime && pending)
     {
         halt_bug = true; // Trigger HALT bug if IME is disabled and there's a pending interrupt

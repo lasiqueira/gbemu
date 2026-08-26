@@ -249,15 +249,10 @@ void PPU::render_scanline(Memory& memory)
 
 void PPU::update_rgba_buffer()
 {
+    uint32_t* dst = rgba_buffer.data();
     for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
     {
-        uint8_t palette_idx = framebuffer[i];
-        const Color& color = GB_PALETTE[palette_idx];
-        
-        rgba_buffer[i * 4 + 0] = color.r;
-        rgba_buffer[i * 4 + 1] = color.g;
-        rgba_buffer[i * 4 + 2] = color.b;
-        rgba_buffer[i * 4 + 3] = ALPHA_OPAQUE; // Alpha
+        dst[i] = GB_PALETTE_RGBA32[framebuffer[i]];
     }
 }
 
