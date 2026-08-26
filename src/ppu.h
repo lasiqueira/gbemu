@@ -157,7 +157,6 @@ struct PPU
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 
-    int get_sprite_pixel(const Sprite& sprite, int screen_x, int sprite_height, uint8_t palette, Memory& memory);
-
+    TileBytes fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory);
     TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 };

@@ -169,17 +169,16 @@ void PPU::render_scanline(Memory& memory)
         const Sprite& sprite = visible_sprites[i];
         int left = sprite.x - SPRITE_X_OFFSET;
         uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read_io_raw(IO_OBP1) : memory.read_io_raw(IO_OBP0);
+        TileBytes row = fetch_sprite_row(sprite, sprite_height, memory);
         for (int px = std::max(0, left); px < std::min(SCREEN_WIDTH, left + 8); px++)
         {
-            if(sprite_line[px].present) continue;
-
-            int color = get_sprite_pixel(sprite, px, sprite_height, palette, memory);
-            if(color != -1)
-            {
-                sprite_line[px].color = color;
-                sprite_line[px].priority = sprite.attributes;
-                sprite_line[px].present = true;
-            }
+            if (sprite_line[px].present) continue;
+            int pixel_x = px - left;
+            if (sprite.attributes & SPRITE_FLIP_X) pixel_x = 7 - pixel_x;
+            int bit_pos = 7 - pixel_x;
+            uint8_t color_id = ((row.byte2 >> bit_pos) & 1) << 1 | ((row.byte1 >> bit_pos) & 1);
+            if (color_id == 0) continue;
+            sprite_line[px] = { (uint8_t)((palette >> (color_id * 2)) & 0x03), sprite.attributes, true };
         }
     }
 
@@ -349,61 +348,21 @@ void PPU::scan_oam(Memory& memory)
         });
 }
 
-int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, int sprite_height, uint8_t palette, Memory& memory)
+TileBytes PPU::fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory)
 {
-    int sprite_left = sprite.x - SPRITE_X_OFFSET;
-    int pixel_x = screen_x - sprite_left;
-    int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET); // Adjust for sprite offset
-
-    // Handle Y flip
-    if(sprite.attributes & SPRITE_FLIP_Y)
-    {
+    int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET);
+    if (sprite.attributes & SPRITE_FLIP_Y)
         pixel_y = (sprite_height - 1) - pixel_y;
-    }
 
-    // Handle X flip
-    if(sprite.attributes & SPRITE_FLIP_X)
-    {
-        pixel_x = 7 - pixel_x;
-    }
-
-    // Determine which tile to use
     uint8_t tile_index = sprite.tile_index;
-    if(sprite_height == 16)
+    if (sprite_height == 16)
     {
-        if(pixel_y >= 8)
-        {
-            // Bottom half
-            tile_index = (sprite.tile_index & 0xFE) + 1;
-            pixel_y -= 8;
-        }
-        else
-        {
-            // Top half
-            tile_index = sprite.tile_index & 0xFE;
-        }
+        if (pixel_y >= 8) { tile_index = (sprite.tile_index & 0xFE) + 1; pixel_y -= 8; }
+        else              { tile_index = sprite.tile_index & 0xFE; }
     }
 
-    // Get tile data address
-    uint16_t tile_addr = ADDR_VRAM_START + (tile_index * BYTES_PER_TILE);
-    // Each tile row is 2 bytes
-    uint16_t tile_row_addr = tile_addr + (pixel_y * 2);
-    uint8_t byte1 = memory.read_vram(tile_row_addr);
-    uint8_t byte2 = memory.read_vram(tile_row_addr + 1);
-
-    // Get color from pixel (bit 7 = leftmost pixel)
-    int bit_pos = 7 - pixel_x;
-    uint8_t color_id = ((byte2 >> bit_pos) & 1) << 1 | ((byte1 >> bit_pos) & 1);
-
-    // Color ID 0 is transparent for sprites
-    if(color_id == 0)
-    {
-        return -1;
-    }
-
-    uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
-
-    return palette_color;
+    uint16_t tile_row_addr = ADDR_VRAM_START + tile_index * BYTES_PER_TILE + pixel_y * 2;
+    return { memory.read_vram(tile_row_addr), memory.read_vram(tile_row_addr + 1) };
 }
 
 TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory)
