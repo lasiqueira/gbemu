@@ -146,18 +146,20 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR13:
         {
             channel1.period_value = (channel1.period_value & 0x0700) | value;
+            channel1.period_reload = (APU_PERIOD_MAX - channel1.period_value) * 4;
         } break;
 
         case IO_NR14:
         {
             channel1.period_value = (channel1.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel1.period_reload = (APU_PERIOD_MAX - channel1.period_value) * 4;
             bool old_len1 = channel1.length_enabled;
             channel1.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
                 if (channel1.dac_enabled) channel1.enabled = true;
-                channel1.period_timer = (APU_PERIOD_MAX - channel1.period_value) * 4;
+                channel1.period_timer = channel1.period_reload;
                 channel1.envelope.current_vol = channel1.envelope.initial_vol;
                 channel1.envelope.env_counter = channel1.envelope.env_pace;
                 channel1.negate_was_used = false;
@@ -198,20 +200,22 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR23:
         {
             channel2.period_value = (channel2.period_value & 0x0700) | value;
+            channel2.period_reload = (APU_PERIOD_MAX - channel2.period_value) * 4;
         } break;
 
         case IO_NR24:
         {
             channel2.period_value = (channel2.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel2.period_reload = (APU_PERIOD_MAX - channel2.period_value) * 4;
             bool old_len2 = channel2.length_enabled;
             channel2.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
                 if (channel2.dac_enabled) channel2.enabled = true;
-                channel2.period_timer = (APU_PERIOD_MAX - channel2.period_value) * 4;
+                channel2.period_timer = channel2.period_reload;
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
-                channel2.envelope.env_counter = channel2.envelope.env_pace;
+                channel2.envelope.env_counter = channel2.envelope.env_pace;   
             }
             apply_length_clock(channel2, old_len2, trigger, 64);
         } break;
@@ -240,11 +244,13 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR33:
         {
             channel3.period_value = (channel3.period_value & 0x0700) | value;
+            channel3.period_reload = (APU_PERIOD_MAX - channel3.period_value) * 2;
         } break;
 
         case IO_NR34:
         {
             channel3.period_value = (channel3.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel3.period_reload = (APU_PERIOD_MAX - channel3.period_value) * 2;
             bool old_len3 = channel3.length_enabled;
             channel3.length_enabled = (value & 0x40) != 0;
             bool trigger = (value & 0x80) != 0;
@@ -254,7 +260,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 // wave byte into wave RAM position 0.
                 if (channel3.enabled) wave_ram[0] = wave_ram[channel3.wave_pos >> 1];
                 if (channel3.dac_enabled) channel3.enabled = true;
-                channel3.period_timer = (APU_PERIOD_MAX - channel3.period_value) * 2;
+                channel3.period_timer = channel3.period_reload;
                 channel3.wave_pos = 0;
             }
             apply_length_clock(channel3, old_len3, trigger, 256);
@@ -284,6 +290,8 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             channel4.clock_div = value & 0x07;
             channel4.clock_shift = (value >> 4) & 0x0F;
             channel4.lfsr_width = (value & 0x08) ? 7 : 15; // Bit 3 determines LFSR width
+            channel4.period_reload = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16)
+                          << channel4.clock_shift;
         } break;
 
         case IO_NR44:
@@ -297,7 +305,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel4.envelope.env_counter = channel4.envelope.env_pace;
                 channel4.envelope.current_vol = channel4.envelope.initial_vol;
                 channel4.lfsr = APU_LFSR_INIT;
-                channel4.period_timer = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16) << channel4.clock_shift;
+                channel4.period_timer = channel4.period_reload;
             }
             apply_length_clock(channel4, old_len4, trigger, 64);
         } break;
@@ -502,8 +510,7 @@ void SquareChannelWithSweep::clock_sweep()
     {
         shadow_period = (uint16_t) new_freq;
         period_value = (uint16_t) new_freq;
-
-        // Second overflow check after write-back
+        period_reload = (APU_PERIOD_MAX - period_value) * 4;
         int delta2 = shadow_period >> sweep_step;
         int next2 = shadow_period + (sweep_negate ? -delta2 : +delta2);
         if (next2 >= APU_PERIOD_MAX)
@@ -544,7 +551,7 @@ void SquareChannel::step(int cycles)
     period_timer -= cycles;
     while (period_timer <= 0)
     {
-        period_timer += (APU_PERIOD_MAX - period_value) * 4; // Timer counts down every 4 cycles
+        period_timer += period_reload; // Timer counts down every 4 cycles
         duty_pos = (duty_pos + 1) & 7; // Cycle through duty positions
     }
 }
@@ -555,7 +562,7 @@ void WaveChannel::step(int cycles)
     period_timer -= cycles;
     while (period_timer <= 0)
     {
-        period_timer += (APU_PERIOD_MAX - period_value) * 2; // Timer counts down every 2 cycles
+        period_timer += period_reload; // Timer counts down every 2 cycles
         wave_pos = (wave_pos + 1) & 31; // Cycle through wave positions (32 samples)
     }
 }
@@ -566,8 +573,7 @@ void NoiseChannel::step(int cycles)
     period_timer -= cycles;
     while (period_timer <= 0)
     {
-        int divisor = clock_div == 0 ? 8 : clock_div * 16;
-        period_timer += divisor << clock_shift; // Timer counts down based on clock shift and divisor
+        period_timer += period_reload; // Timer counts down based on clock shift and divisor
 
         uint8_t xor_bit = ((lfsr & 0x01) ^ ((lfsr >> 1) & 0x01));
         lfsr = (lfsr >> 1) | (xor_bit << 14); // Shift LFSR and insert new bit at position 14

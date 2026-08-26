@@ -44,6 +44,7 @@ struct Memory; // Forward declaration
 struct Channel
 {
     int period_timer = 0; // must stay int — NoiseChannel stores values up to ~917504
+    int period_reload = APU_PERIOD_MAX * 4; // Reload value for period timer (calculated from period_value)
     uint16_t length_counter = 0; // max 256 (CH3), safe
     uint8_t length_value = 0;
     bool dac_enabled = false;
