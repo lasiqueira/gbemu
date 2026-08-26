@@ -27,4 +27,6 @@ struct GameBoy {
     
     // Handle interrupts
     void handle_interrupts();
+
+    void on_memory_cycle(int cycles);
 };

@@ -68,13 +68,13 @@ struct CPU
     void print_state();
     void unimplemented_instruction(uint8_t opcode, const std::vector<uint8_t>& rom);
     int nop();
-    int jp_a16(uint16_t addr, bool condition = true);
+    int jp_a16(Memory& memory, uint16_t addr, bool condition = true);
     int xor_a(uint8_t value, int length = 1, int cycles = 4);
     int ld_rr_n16(uint16_t& dest, uint16_t value, int length = 3, int cycles = 12);
     int ld_r_n8(uint8_t& dest, uint8_t value, int length = 2, int cycles = 8);
     int ld_hlp_a(Memory& memory, bool increment);
     int dec_r(uint8_t& reg);
-    int jr_e8(int8_t offset, bool condition = true);
+    int jr_e8(Memory& memory, int8_t offset, bool condition = true);
     int di();
     int ei();
     int ldh(Memory& memory, uint8_t offset, bool to_memory, int length = 1, int cycles = 8);
@@ -83,17 +83,17 @@ struct CPU
     int ld_a_hlp(Memory& memory, bool increment);
     int inc_r(uint8_t& reg);
     int call_a16(Memory& memory, uint16_t addr, bool condition = true);
-    int dec_rr(uint16_t& regpair);
+    int dec_rr(Memory& memory, uint16_t& regpair);
     int or_a(uint8_t value, int length = 1, int cycles = 4);
-    int ret(Memory& memory, bool condition = true, int cycles_if_taken = 16, bool enable_interrupts = false);
+    int ret(Memory& memory, bool condition = true, int cycles_if_taken = 16, bool enable_interrupts = false, bool is_conditional = false);
     int cpl();
     int daa();
     int and_a(uint8_t value, int length = 1, int cycles = 4);
     int rst(Memory& memory, uint8_t addr);
     int add_a(uint8_t value, int length = 1, int cycles = 4);
     int pop_rr(Memory& memory, uint16_t& dest);
-    int add_hl_rr(uint16_t value);
-    int inc_rr(uint16_t& regpair);
+    int add_hl_rr(Memory& memory, uint16_t value);
+    int inc_rr(Memory& memory, uint16_t& regpair);
     int push_rr(Memory& memory, uint16_t value);
     int jp_hl();
     int inc_mem_hl(Memory& memory);
@@ -110,8 +110,8 @@ struct CPU
     int sbc_a(uint8_t value, int length = 1, int cycles = 4);
     int stop();
     int ld_mem_sp(Memory& memory, uint16_t addr);
-    int add_sp_e8(int8_t offset);
-    int ld_hl_sp_e8(int8_t offset);
+    int add_sp_e8(Memory& memory, int8_t offset);
+    int ld_hl_sp_e8(Memory& memory, int8_t offset);
 
     //CB-prefixed instructions
     int cb_execute_instruction(Memory& memory);
@@ -140,5 +140,12 @@ struct CPU
     
     // Execute one instruction, return cycles taken
     int execute_instruction(Memory& memory);
+
+    // Memory access helpers for CPU instructions
+    uint8_t bus_read(Memory& memory, uint16_t addr);
+    void bus_write(Memory& memory, uint16_t addr, uint8_t value);
+    uint16_t bus_read_word(Memory& memory, uint16_t addr);
+    void bus_write_word(Memory& memory, uint16_t addr, uint16_t value);
+    void tick_internal(Memory& memory);
 };
 

@@ -1,6 +1,7 @@
 #include "memory.h"
 #include "constants.h"
 #include "apu.h" 
+#include "gameboy.h"
 #include <cstdio>
 #include <ctime>
 
@@ -601,4 +602,9 @@ uint8_t Memory::read_io_raw(uint16_t addr) const
 void Memory::write_io_raw(uint16_t addr, uint8_t value)
 {
     io[addr - ADDR_IO_START] = value;
+}
+
+void Memory::tick_cycle(int cycles)
+{
+    gameboy->on_memory_cycle(cycles);
 }

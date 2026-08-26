@@ -2,8 +2,10 @@
 #include <cstdint>
 #include <vector>
 #include <string>
+#include <functional>
 
 struct APU; // Forward declaration
+struct GameBoy; // Forward declaration
 
 enum class MBCType 
     {
@@ -48,6 +50,7 @@ struct Memory {
     uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
     
     APU* apu = nullptr; // Pointer to APU for audio register access
+    GameBoy* gameboy = nullptr; // Pointer to Game Boy
 
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
@@ -97,4 +100,6 @@ struct Memory {
 
     // Write a byte to I/O registers without side effects. Not to use for joypad or audio registers, as they have side effects on write.
     void write_io_raw(uint16_t addr, uint8_t value);
+
+    void tick_cycle(int cycles);
 };

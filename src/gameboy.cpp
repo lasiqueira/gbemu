@@ -9,6 +9,7 @@ void GameBoy::reset()
     memory = Memory{};
 
     memory.apu = &apu; // Link APU to memory for audio register access
+    memory.gameboy = this; // Link GameBoy to memory for cycle callbacks
 
     // Post-boot I/O register state (skipping boot ROM)
     memory.write(IO_JOYPAD, 0x3F);
@@ -61,11 +62,18 @@ int GameBoy::step_frame()
         if (cpu.halted || cpu.stopped)
         {
             cycles = 4; // HALT and STOP consume 4 cycles while halted/stopped
+            // No CPU bus access happens while halted/stopped, so tick subsystems explicitly here
+            if (!cpu.stopped)
+            {
+                ppu.step(cycles, memory);
+                apu.step(cycles, memory);
+            }
+            memory.tick_timers(cycles);
         }
         else
         {
             handle_interrupts();
-            cycles = step();
+            cycles = step(); // PPU/APU/timers are ticked inline via bus_read/bus_write as the instruction runs
         }
 
         if (cycles < 0)
@@ -74,14 +82,6 @@ int GameBoy::step_frame()
             return cycles; // Error occurred
         }
         cycles_executed += cycles;
-
-        // Update PPU, APU, and timers
-        if (!cpu.stopped)
-        {
-            ppu.step(cycles, memory);
-            apu.step(cycles, memory);
-        }
-        memory.tick_timers(cycles);
     }
     return cycles_executed;
 }
@@ -138,12 +138,23 @@ void GameBoy::handle_interrupts()
     // Clear the interrupt flag
     memory.write(IO_IF, if_reg & ~interrupt_bit);
     
+    // Interrupt dispatch takes 5 M-cycles on hardware: 2 internal, 2 pushing PC, 1 jumping to the vector
+    cpu.tick_internal(memory);
+    cpu.tick_internal(memory);
+    
     // Push PC onto stack
     cpu.sp -= 2;
-    memory.write_word(cpu.sp, cpu.pc);
+    cpu.bus_write_word(memory, cpu.sp, cpu.pc);
     
     // Jump to interrupt vector
     cpu.pc = interrupt_vector;
+    cpu.tick_internal(memory);
 }
 
+void GameBoy::on_memory_cycle(int cycles)
+{
+    ppu.step(cycles, memory);
+    apu.step(cycles, memory);
+    memory.tick_timers(cycles);
 
+}

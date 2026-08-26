@@ -505,23 +505,23 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ 06: overflow on trigger
 - ✅ 07: len sweep period sync
 - ❌ 08: len ctr during power (power-cycle counter preservation timing)
-- ❌ 09: wave read while on (requires CPU bus timing fix)
-- ❌ 10: wave trigger while on (requires CPU bus timing fix)
+- ❌ 09: wave read while on (APU wave-channel active-read quirk not implemented)
+- ❌ 10: wave trigger while on (APU wave-channel retrigger quirk not implemented)
 - ✅ 11: regs after power
-- ❌ 12: wave write while on (requires CPU bus timing fix)
+- ❌ 12: wave write while on (APU wave-channel active-write quirk not implemented)
 
 **Blargg instr_timing — passes:**
 - ✅ instr_timing
 
-**Blargg mem_timing — 0 of 3 tests pass (requires CPU bus timing fix):**
-- ❌ 01: read_timing
-- ❌ 02: write_timing
-- ❌ 03: modify_timing
+**Blargg mem_timing — all tests pass:**
+- ✅ 01: read_timing
+- ✅ 02: write_timing
+- ✅ 03: modify_timing
 
-**Blargg mem_timing-2 — 0 of 3 tests pass (requires CPU bus timing fix):**
-- ❌ 01: read_timing
-- ❌ 02: write_timing
-- ❌ 03: modify_timing
+**Blargg mem_timing-2 — all tests pass:**
+- ✅ 01: read_timing
+- ✅ 02: write_timing
+- ✅ 03: modify_timing
 
 **Blargg oam_bug — 2 of 8 tests pass (OAM corruption quirk not implemented):**
 - ❌ 1-lcd_sync
@@ -534,6 +534,13 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ❌ 8-instr_effect
 
 **Blargg halt_bug — visual-only test (no serial/RAM output, not measurable headlessly)**
+
+**Blargg interrupt_time — not measurable headlessly (manual-comparison test, no pass/fail signature)**
+
+**Blargg cgb_sound — skipped (CGB-only test suite, not applicable to this DMG-only emulator)**
+
+See [docs/blargg_test_status.md](docs/blargg_test_status.md) for the full pass/fail matrix,
+per-opcode failure detail, and a prioritized root-cause/remediation backlog for the remaining failures.
 
 **Tetris — fully playable:**
 - ✅ Boots to title screen with full graphics
