@@ -163,6 +163,27 @@ void PPU::render_scanline(Memory& memory)
     int cached_tile_x = -1;
     bool cached_was_window = false;
 
+    std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
+    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
+    for (int i = 0; i < visible_sprite_count; i++)
+    {
+        const Sprite& sprite = visible_sprites[i];
+        int left = sprite.x - SPRITE_X_OFFSET;
+        uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read_io_raw(IO_OBP1) : memory.read_io_raw(IO_OBP0);
+        for (int px = std::max(0, left); px < std::min(SCREEN_WIDTH, left + 8); px++)
+        {
+            if(sprite_line[px].present) continue;
+
+            int color = get_sprite_pixel(sprite, px, sprite_height, palette, memory);
+            if(color != -1)
+            {
+                sprite_line[px].color = color;
+                sprite_line[px].priority = sprite.attributes;
+                sprite_line[px].present = true;
+            }
+        }
+    }
+
     // Render
     for (int x = 0; x < SCREEN_WIDTH; x++)
     {
@@ -189,19 +210,9 @@ void PPU::render_scanline(Memory& memory)
 
         uint8_t bg_color = (bgp >> (color_id * 2)) & 0x03;
 
-        int sprite_color = -1;
-        uint8_t sprite_priority = 0; // Stores sprite attributes for priority check
-        
-        for(int i = 0; i < visible_sprite_count; i++)
-        {
-            int color = get_sprite_pixel(visible_sprites[i], x, memory);
-            if(color != -1) // Non-transparent sprite pixel
-            {
-                sprite_color = color;
-                sprite_priority = visible_sprites[i].attributes;
-                break; // First non-transparent sprite pixel has priority
-            }
-        }
+        int sprite_color = sprite_line[x].present ? sprite_line[x].color : -1;
+        uint8_t sprite_priority = sprite_line[x].priority;
+
         uint8_t final_color;
         if(sprite_color == -1)
         {
@@ -337,24 +348,11 @@ void PPU::scan_oam(Memory& memory)
         });
 }
 
-int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
+int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, int sprite_height, uint8_t palette, Memory& memory)
 {
-    // Calculate horizontal bounds of the sprite
-    int sprite_left = sprite.x - SPRITE_X_OFFSET; // Adjust for sprite offset
-    int sprite_right = sprite_left + 8;
-
-    // Check if the pixel is within the horizontal bounds of the sprite
-    if(screen_x < sprite_left || screen_x >= sprite_right)
-    {
-        return -1; // Not within sprite horizontally
-    }
-    // Calculate vertical bounds of the sprite
+    int sprite_left = sprite.x - SPRITE_X_OFFSET;
     int pixel_x = screen_x - sprite_left;
     int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET); // Adjust for sprite offset
-
-    // Determine sprite height from IO_LCDC
-    uint8_t lcdc = memory.read_io_raw(IO_LCDC);
-    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
 
     // Handle Y flip
     if(sprite.attributes & SPRITE_FLIP_Y)
@@ -401,9 +399,6 @@ int PPU::get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory)
     {
         return -1;
     }
-
-    // Apply palette
-    uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read_io_raw(IO_OBP1) : memory.read_io_raw(IO_OBP0);
 
     uint8_t palette_color = (palette >> (color_id * 2)) & 0x03;
 

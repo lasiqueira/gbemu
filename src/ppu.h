@@ -97,6 +97,14 @@ struct TileBytes
     uint8_t byte2;
 };
 
+struct SpritePixel
+{
+    uint8_t color;
+    uint8_t priority;
+    bool present = false;
+
+};
+
 struct PPU
 {
     // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
@@ -133,7 +141,7 @@ struct PPU
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 
-    int get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory);
+    int get_sprite_pixel(const Sprite& sprite, int screen_x, int sprite_height, uint8_t palette, Memory& memory);
 
     TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 };
