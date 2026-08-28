@@ -253,11 +253,11 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
-                // DMG wave corruption: retriggering while active latches the currently-playing
-                // wave byte into wave RAM position 0.
-                if (channel3.enabled)
+                // DMG wave corruption: retriggering exactly as CH3 is about to read a byte latches
+                // that upcoming byte (or its 4-byte-aligned block) into wave RAM position 0.
+                if (channel3.enabled && channel3.just_read_sample)
                 {
-                    uint8_t pos_byte = channel3.wave_pos >> 1; // wave_pos is in 0-31, each byte has 2 samples
+                    uint8_t pos_byte = ((channel3.wave_pos + 1) >> 1) & 0x0F; // byte about to be read, not the current one
                     
                     if (pos_byte < 4)
                     {
@@ -273,7 +273,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                     }
                 }
                 if (channel3.dac_enabled) channel3.enabled = true;
-                channel3.period_timer = channel3.period_reload;
+                channel3.period_timer = channel3.period_reload + 6; // DMG trigger delay before first sample fetch
                 channel3.wave_pos = 0;
             }
             apply_length_clock(channel3, old_len3, trigger, 256);
@@ -395,10 +395,10 @@ void APU::frame_seq_step()
 void APU::on_wave_ram_write(uint16_t offset, uint8_t value)
 {
     if (offset < 16)
-    {   
+    {
         if (channel3.enabled)
         {
-            wave_ram[channel3.wave_pos >> 1] = value;
+            if (channel3.just_read_sample) wave_ram[channel3.wave_pos >> 1] = value; // else: locked out, write dropped
         }
         else
         {
@@ -411,7 +411,7 @@ uint8_t APU::on_wave_ram_read(uint16_t offset) const
 {
     if (channel3.enabled)
     {
-        return wave_ram[channel3.wave_pos >> 1];
+        return channel3.just_read_sample ? wave_ram[channel3.wave_pos >> 1] : 0xFF;
     }
     return wave_ram[offset];
 }
@@ -571,10 +571,12 @@ void SquareChannel::step(int cycles)
 
 void WaveChannel::step(int cycles)
 {
+    just_read_sample = false;
     if (!enabled) return;
     period_timer -= cycles;
     while (period_timer <= 0)
     {
+        just_read_sample = (period_timer == 0); // exact-cycle coincidence with the CPU's access
         period_timer += period_reload; // Timer counts down every 2 cycles
         wave_pos = (wave_pos + 1) & 31; // Cycle through wave positions (32 samples)
     }

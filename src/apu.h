@@ -87,7 +87,8 @@ struct SquareChannelWithSweep : public SquareChannel
 };
 
 struct WaveChannel : public Channel
-{
+{  
+    bool just_read_sample = false;
     uint16_t period_value = 0;
     uint8_t volume = 0; // 0=off, 1=100%, 2=50%, 3=25%
     uint8_t wave_pos = 0;
