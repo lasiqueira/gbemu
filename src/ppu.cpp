@@ -396,3 +396,82 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     
     return row_bytes;
 }
+
+int PPU::current_oam_row() const
+{
+    if(lcd_off || mode != PPUMode::OAMSearch) return -1;
+    int row = mode_cycles / 4; // Each OAM row takes 4 cycles
+    return row < OAM_ROWS ? row : -1;
+}
+
+void PPU::corrupt_oam(Memory& memory, OamCorruption type)
+{
+    int row = current_oam_row();
+    if(row < 0) return; // Not in OAM search mode
+
+    switch(type)
+    {
+        case OamCorruption::Read: read_corruption(memory, row); break;
+        case OamCorruption::Write: write_corruption(memory, row); break;
+        case OamCorruption::ReadIncDec:  read_incdec_corruption(memory, row); break;
+    }
+}
+
+uint16_t oam_word(const Memory& memory, int row, int word)
+{
+    int i = row * 8 + word * 2;
+    return static_cast<uint16_t>(memory.oam[i]) | (static_cast<uint16_t>(memory.oam[i + 1]) << 8);
+}
+
+void set_oam_word(Memory& memory, int row, int word, uint16_t value)
+{
+    int i = row * 8 + word * 2;
+    memory.oam[i] = static_cast<uint8_t>(value & 0xFF);
+    memory.oam[i + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+}
+
+void copy_oam_tail(Memory& memory, int dst, int src)
+{
+    std::memcpy(memory.oam + dst * 8 + 2, memory.oam + src * 8 + 2, 6);
+}
+
+void copy_oam_row(Memory& memory, int dst, int src)
+{
+    std::memcpy(memory.oam + dst * 8, memory.oam + src * 8, 8);
+}
+
+void write_corruption(Memory& memory, int row)
+{
+    if (row <= 0) return; // No previous row to copy from
+    uint16_t a = oam_word(memory, row, 0);
+    uint16_t b = oam_word(memory, row - 1, 0);
+    uint16_t c = oam_word(memory, row - 1, 2);
+
+    set_oam_word(memory, row, 0, static_cast<uint16_t>(((a ^ c) & (b ^ c)) ^ c));
+    copy_oam_tail(memory, row, row - 1);
+}
+
+void read_corruption(Memory& memory, int row)
+{
+    if (row <= 0) return; // No previous row to copy from
+    uint16_t a = oam_word(memory, row, 0);
+    uint16_t b = oam_word(memory, row - 1, 0);
+    uint16_t c = oam_word(memory, row - 1, 2);
+
+    set_oam_word(memory, row - 1, 0, static_cast<uint16_t>(b | (a & c)));
+    copy_oam_row(memory, row, row - 1);
+}
+
+void read_incdec_corruption(Memory& memory, int row)
+{
+    if (row >= 4 && row < OAM_ROWS - 1) {
+        uint16_t a = oam_word(memory, row - 2, 0);
+        uint16_t b = oam_word(memory, row - 1, 0);
+        uint16_t c = oam_word(memory, row, 0);
+        uint16_t d = oam_word(memory, row - 1, 2);
+        set_oam_word(memory, row - 1, 0, static_cast<uint16_t>((b & (a | c | d)) | (a & c & d)));
+        copy_oam_row(memory, row,     row - 1);
+        copy_oam_row(memory, row - 2, row - 1);
+    }
+    read_corruption(memory, row); // applied regardless of the above
+}

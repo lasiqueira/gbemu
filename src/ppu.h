@@ -78,6 +78,15 @@ enum class PPUMode : uint8_t
     Drawing = 3     // Mode 3: Transferring data to LCD
 };
 
+enum class OamCorruption : uint8_t 
+{
+    Read,
+    Write,
+    ReadIncDec
+};
+
+constexpr int OAM_ROWS = 20; // OAM = 20 rows x 4 16-bit words; PPU scans one row per M-cycle in mode 2
+
 // Color palette (classic Game Boy colors)
 struct Color
 {
@@ -157,6 +166,19 @@ struct PPU
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 
+    int current_oam_row() const;
+    void corrupt_oam(Memory& memory, OamCorruption type);
+
+
     TileBytes fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory);
     TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 };
+
+// oam corruption helpers
+uint16_t oam_word(const Memory& memory, int row, int word);
+void set_oam_word(Memory& memory, int row, int word, uint16_t value);
+void copy_oam_tail(Memory& memory, int dst, int src);
+void copy_oam_row(Memory& memory, int dst, int src);
+void write_corruption(Memory& memory, int row);
+void read_corruption(Memory& memory, int row);
+void read_incdec_corruption(Memory& memory, int row);
