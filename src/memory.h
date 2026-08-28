@@ -1,4 +1,5 @@
 #pragma once
+#include "ppu.h"
 #include <cstdint>
 #include <vector>
 #include <string>

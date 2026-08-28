@@ -143,6 +143,10 @@ void GameBoy::handle_interrupts()
     cpu.tick_internal(memory);
     
     // Push PC onto stack
+    if (is_oam_bug_range(cpu.sp))
+    {
+        memory.oam_bug(OamCorruption::Write); // glitched write from the implied DEC SP
+    }
     cpu.sp -= 2;
     cpu.bus_write_word(memory, cpu.sp, cpu.pc);
     

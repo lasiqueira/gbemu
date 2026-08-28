@@ -24,9 +24,17 @@ void PPU::step(int cycles, Memory& memory)
         }
         return;
     }
-    lcd_off = false;
-    mode_cycles += cycles;
     
+    if(lcd_off)
+    {
+        lcd_off = false;
+        mode = PPUMode::OAMSearch;
+        scanline = 0;
+        mode_cycles = 4;
+    }
+    
+    mode_cycles += cycles;
+
     switch (mode)
     {
         case PPUMode::OAMSearch:
@@ -458,8 +466,8 @@ void read_corruption(Memory& memory, int row)
     uint16_t b = oam_word(memory, row - 1, 0);
     uint16_t c = oam_word(memory, row - 1, 2);
 
-    set_oam_word(memory, row - 1, 0, static_cast<uint16_t>(b | (a & c)));
-    copy_oam_row(memory, row, row - 1);
+    set_oam_word(memory, row, 0, static_cast<uint16_t>(b | (a & c)));
+    copy_oam_tail(memory, row, row - 1);
 }
 
 void read_incdec_corruption(Memory& memory, int row)

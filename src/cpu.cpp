@@ -180,7 +180,8 @@ int CPU::ld_mem_n8(Memory& memory, uint16_t addr, uint8_t value, int length, int
 
 int CPU::ld_a_hlp(Memory& memory, bool increment)
 {
-    af.high = bus_read(memory, hl.pair);
+    // The read and the IDU inc/dec share one M-cycle, so OAM sees a combined read+write
+    af.high = bus_read(memory, hl.pair, OamCorruption::ReadIncDec);
     hl.pair += increment ? 1 : -1;
     pc += 1; // Move past the instruction
     return 8; // LD A, (HL+/-) takes 8 cycles
@@ -203,6 +204,10 @@ int CPU::call_a16(Memory& memory, uint16_t addr, bool condition)
 {
     if(condition)
     {
+        if (is_oam_bug_range(sp))
+        {
+            memory.oam_bug(OamCorruption::Write); // glitched write from the implied DEC SP
+        }
         sp -= 2;
         tick_internal(memory);
         // Push current PC onto stack
@@ -219,6 +224,10 @@ int CPU::call_a16(Memory& memory, uint16_t addr, bool condition)
 
 int CPU::dec_rr(Memory& memory, uint16_t& regpair)
 {
+    if (is_oam_bug_range(regpair))
+    {
+        memory.oam_bug(OamCorruption::Write);
+    }
     regpair--;
     tick_internal(memory);
     pc += 1; // Move past the instruction
@@ -247,7 +256,9 @@ int CPU::ret(Memory& memory, bool condition, int cycles_if_taken, bool enable_in
     }
     if (condition)
     {
-        pc = bus_read_word(memory, sp);
+        uint8_t low = bus_read(memory, sp, OamCorruption::ReadIncDec);
+        uint8_t high = bus_read(memory, sp + 1);
+        pc = static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
         sp += 2;
         tick_internal(memory); // internal cycle loading PC from the popped value
         if (enable_interrupts)
@@ -352,6 +363,10 @@ int CPU::swap_mem_hl(Memory& memory)
 
 int CPU::rst(Memory& memory, uint8_t addr)
 {
+    if (is_oam_bug_range(sp))
+    {
+        memory.oam_bug(OamCorruption::Write); // glitched write from the implied DEC SP
+    }
     sp -= 2;
     tick_internal(memory);
     bus_write_word(memory, sp, pc + 1); // +1 to move past RST instruction
@@ -377,7 +392,10 @@ int CPU::add_a(uint8_t value, int length, int cycles)
 
 int CPU::pop_rr(Memory& memory, uint16_t& dest)
 {
-    dest = bus_read_word(memory, sp);
+    // Only the first read carries the IDU glitch; the second is a plain read (3 OAM accesses, not 4)
+    uint8_t low = bus_read(memory, sp, OamCorruption::ReadIncDec);
+    uint8_t high = bus_read(memory, sp + 1);
+    dest = static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
     sp += 2;
     pc += 1; // Move past the instruction
     return 12; // POP rr takes 12 cycles
@@ -401,6 +419,10 @@ int CPU::add_hl_rr(Memory& memory, uint16_t value)
 
 int CPU::inc_rr(Memory& memory, uint16_t& regpair)
 {
+    if (is_oam_bug_range(regpair))
+    {
+        memory.oam_bug(OamCorruption::Write);
+    }
     regpair++;
     tick_internal(memory);
     pc += 1; // Move past the instruction
@@ -409,6 +431,10 @@ int CPU::inc_rr(Memory& memory, uint16_t& regpair)
 
 int CPU::push_rr(Memory& memory, uint16_t value)
 {
+    if (is_oam_bug_range(sp))
+    {
+        memory.oam_bug(OamCorruption::Write); // glitched write from the implied DEC SP
+    }
     sp -= 2;
     tick_internal(memory);
     bus_write_word(memory, sp, value);
@@ -1306,12 +1332,12 @@ int CPU::cb_execute_instruction(Memory& memory)
     return -1;
 }
 
-uint8_t CPU::bus_read(Memory& memory, uint16_t address)
+uint8_t CPU::bus_read(Memory& memory, uint16_t address, OamCorruption type)
 {
     uint8_t value = memory.read(address);
     if (is_oam_bug_range(address))
     {
-        memory.oam_bug(oam_kind);
+        memory.oam_bug(type);
     }
     memory.tick_cycle(4); // Simulate bus read timing (4 cycles)
     return value;
