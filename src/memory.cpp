@@ -608,3 +608,13 @@ void Memory::tick_cycle(int cycles)
 {
     gameboy->on_memory_cycle(cycles);
 }
+
+void Memory::oam_bug(OamCorruption type)
+{
+    gameboy->ppu.corrupt_oam(*this, type);
+}
+
+bool is_oam_bug_range(uint16_t addr)
+{
+    return (addr & 0xFF00) == 0xFE00;
+}

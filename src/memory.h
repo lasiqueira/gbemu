@@ -102,4 +102,8 @@ struct Memory {
     void write_io_raw(uint16_t addr, uint8_t value);
 
     void tick_cycle(int cycles);
+
+    void oam_bug(OamCorruption type);
 };
+
+bool is_oam_bug_range(uint16_t addr);

@@ -1309,6 +1309,10 @@ int CPU::cb_execute_instruction(Memory& memory)
 uint8_t CPU::bus_read(Memory& memory, uint16_t address)
 {
     uint8_t value = memory.read(address);
+    if (is_oam_bug_range(address))
+    {
+        memory.oam_bug(oam_kind);
+    }
     memory.tick_cycle(4); // Simulate bus read timing (4 cycles)
     return value;
 }
@@ -1316,6 +1320,10 @@ uint8_t CPU::bus_read(Memory& memory, uint16_t address)
 void CPU::bus_write(Memory& memory, uint16_t address, uint8_t value)
 {
     memory.write(address, value);
+    if (is_oam_bug_range(address))
+    {
+        memory.oam_bug(OamCorruption::Write);
+    }
     memory.tick_cycle(4); // Simulate bus write timing (4 cycles)
 }
 

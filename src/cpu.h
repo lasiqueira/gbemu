@@ -142,7 +142,7 @@ struct CPU
     int execute_instruction(Memory& memory);
 
     // Memory access helpers for CPU instructions
-    uint8_t bus_read(Memory& memory, uint16_t addr);
+    uint8_t bus_read(Memory& memory, uint16_t addr, OamCorruption type = OamCorruption::Read);
     void bus_write(Memory& memory, uint16_t addr, uint8_t value);
     uint16_t bus_read_word(Memory& memory, uint16_t addr);
     void bus_write_word(Memory& memory, uint16_t addr, uint16_t value);
