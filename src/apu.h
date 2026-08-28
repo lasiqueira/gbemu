@@ -5,7 +5,6 @@
 // APU timing and audio constants
 constexpr int AUDIO_SAMPLE_RATE = 44100;
 constexpr int APU_PERIOD_MAX = 2048; // Max period value for square/wave channels (2048 = 0x800)
-constexpr int FRAME_SEQ_CYCLES = 8192; // 8192 cycles per frame sequencer step (512 Hz)
 constexpr int AUDIO_SAMPLE_SCALING = 68; // max per side is 4 ch × 15 vol × 8 NR50 = 480
 constexpr uint16_t APU_LFSR_INIT = 0x7FFF; // Initial value for 15-bit LFSR in noise channel
 constexpr uint8_t SWEEP_TIMER_DEFAULT = 8;
@@ -111,7 +110,6 @@ struct NoiseChannel : public Channel
 
 struct APU
 {
-    uint16_t cycle_counter = 0;
     uint8_t frame_seq_counter = 0;
     uint32_t sample_counter = 0; 
     bool master_enabled = false;

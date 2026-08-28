@@ -37,21 +37,20 @@ void APU::step(int cycles, Memory& memory)
         return; // APU is disabled, do nothing
     }
 
-    cycle_counter += cycles;
 
-    // Frame sequencer: 8 steps cycling at 512 Hz = one step every 8192 cycles
-    while (cycle_counter >= FRAME_SEQ_CYCLES)
+    uint16_t div_before = memory.div_counter;
+    uint16_t div_after = div_before + cycles;
+    if ((div_before & 0x1000) && !(div_after & 0x1000))
     {
-        cycle_counter -= FRAME_SEQ_CYCLES;
-        frame_seq_step(); // advances internal step 0→1→2→...→7→0
+        frame_seq_step();
     }
 }
 
 void APU::on_register_write(uint16_t addr, uint8_t value)
 {
-    if (!master_enabled && addr != IO_NR52 && addr != IO_NR41)
+    if (!master_enabled && addr != IO_NR52 && addr != IO_NR11 && addr != IO_NR21 && addr != IO_NR31 && addr != IO_NR41)
     {
-        return; // APU is disabled, ignore writes except to NR52 and NR41 (length timer)
+        return; // DMG quirk: length timers (NRx1) stay writable while the APU is off, unlike other registers
     }
     switch (addr)
     {
@@ -66,7 +65,6 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 nr50 = 0;
                 nr51 = 0;
                 frame_seq_counter = 0;
-                cycle_counter = 0;
                 
                 uint16_t lc1 = channel1.length_counter;
                 uint16_t lc2 = channel2.length_counter;
@@ -97,7 +95,6 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             {
                 master_enabled = true;
                 frame_seq_counter = 0;
-                cycle_counter = 0;
             }
         }  break;
         
@@ -126,7 +123,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
 
         case IO_NR11:
         {
-            channel1.duty = (value >> 6) & 0x03;
+            if (master_enabled) channel1.duty = (value >> 6) & 0x03; // duty bits don't apply while powered off
             channel1.length_value = value & 0x3F;
             channel1.length_counter = 64 - channel1.length_value;
         } break;
@@ -180,7 +177,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         // Channel 2 registers
          case IO_NR21:
         {
-            channel2.duty = (value >> 6) & 0x03;
+            if (master_enabled) channel2.duty = (value >> 6) & 0x03; // duty bits don't apply while powered off
             channel2.length_value = value & 0x3F;
             channel2.length_counter = 64 - channel2.length_value;
         } break;
@@ -258,7 +255,23 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             {
                 // DMG wave corruption: retriggering while active latches the currently-playing
                 // wave byte into wave RAM position 0.
-                if (channel3.enabled) wave_ram[0] = wave_ram[channel3.wave_pos >> 1];
+                if (channel3.enabled)
+                {
+                    uint8_t pos_byte = channel3.wave_pos >> 1; // wave_pos is in 0-31, each byte has 2 samples
+                    
+                    if (pos_byte < 4)
+                    {
+                        wave_ram[0] = wave_ram[pos_byte];
+                    }
+                    else
+                    {
+                        uint8_t block_start = pos_byte & ~0x03; // Align to 4-byte block
+                        wave_ram[0] = wave_ram[block_start];
+                        wave_ram[1] = wave_ram[block_start + 1];
+                        wave_ram[2] = wave_ram[block_start + 2];
+                        wave_ram[3] = wave_ram[block_start + 3];
+                    }
+                }
                 if (channel3.dac_enabled) channel3.enabled = true;
                 channel3.period_timer = channel3.period_reload;
                 channel3.wave_pos = 0;
