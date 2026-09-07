@@ -85,7 +85,7 @@ Detailed development documentation with step-by-step explanations is available i
   - NR51 per-channel stereo panning, NR50 master volume (1–8 per side)
   - NR52 master enable/disable; length counters preserved through power cycles (DMG hardware behaviour)
   - NR41 (CH4 length register) writable while APU powered off (DMG hardware behaviour)
-  - Wave channel read/write while active accesses currently-playing Wave RAM position (DMG hardware behaviour)
+  - Wave channel read/write while active only succeeds on exact-cycle coincidence with CH3's own sample fetch, else read returns 0xFF / write is dropped (DMG hardware behaviour)
   - SDL3 stereo audio stream at 44,100 Hz, 16-bit signed
   - Frame-paced audio delivery
 
@@ -474,7 +474,7 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ Volume envelopes on CH1, CH2, CH4
 - ✅ Frequency sweep on CH1: overflow on trigger and clock, negate-mode exit disables channel
 - ✅ NR51 stereo panning, NR50 master volume, NR52 master enable with DMG power-cycle behaviour
-- ✅ Wave channel active read/write redirects to currently-playing position
+- ✅ Wave channel active read/write only succeeds on exact-cycle coincidence with CH3's own fetch
 - ✅ 44,100 Hz stereo output via SDL3 audio stream
 
 **Documentation:**
@@ -496,7 +496,7 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ 10: bit ops
 - ✅ 11: op a,(hl)
 
-**Blargg dmg_sound — 8 of 12 tests pass:**
+**Blargg dmg_sound — 11 of 12 tests pass:**
 - ✅ 01: registers
 - ✅ 02: len ctr
 - ✅ 03: trigger
@@ -504,11 +504,11 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ 05: sweep details
 - ✅ 06: overflow on trigger
 - ✅ 07: len sweep period sync
-- ❌ 08: len ctr during power (power-cycle counter preservation timing)
-- ❌ 09: wave read while on (APU wave-channel active-read quirk not implemented)
-- ❌ 10: wave trigger while on (APU wave-channel retrigger quirk not implemented)
+- ✅ 08: len ctr during power
+- ✅ 09: wave read while on
+- ❌ 10: wave trigger while on (APU wave-channel retrigger quirk not fully matching hardware)
 - ✅ 11: regs after power
-- ❌ 12: wave write while on (APU wave-channel active-write quirk not implemented)
+- ✅ 12: wave write while on
 
 **Blargg instr_timing — passes:**
 - ✅ instr_timing
@@ -523,15 +523,15 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ 02: write_timing
 - ✅ 03: modify_timing
 
-**Blargg oam_bug — 2 of 8 tests pass (OAM corruption quirk not implemented):**
-- ❌ 1-lcd_sync
-- ❌ 2-causes
+**Blargg oam_bug — 7 of 8 tests pass standalone (8/8 in the combined ROM):**
+- ✅ 1-lcd_sync
+- ✅ 2-causes
 - ✅ 3-non_causes
-- ❌ 4-scanline_timing
-- ❌ 5-timing_bug
+- ✅ 4-scanline_timing
+- ✅ 5-timing_bug
 - ✅ 6-timing_no_bug
-- ❌ 7-timing_effect
-- ❌ 8-instr_effect
+- ⚠️ 7-timing_effect (passes as test 07 inside the combined ROM; standalone build's console printing exceeds the 120s headless budget)
+- ✅ 8-instr_effect
 
 **Blargg halt_bug — visual-only test (no serial/RAM output, not measurable headlessly)**
 
