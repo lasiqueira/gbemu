@@ -78,6 +78,15 @@ enum class PPUMode : uint8_t
     Drawing = 3     // Mode 3: Transferring data to LCD
 };
 
+enum class OamCorruption : uint8_t 
+{
+    Read,
+    Write,
+    ReadIncDec
+};
+
+constexpr int OAM_ROWS = 20; // OAM = 20 rows x 4 16-bit words; PPU scans one row per M-cycle in mode 2
+
 // Color palette (classic Game Boy colors)
 struct Color
 {
@@ -91,15 +100,45 @@ constexpr Color GB_PALETTE[4] = {
     {0x0F, 0x38, 0x0F}   // Darkest
 };
 
+constexpr uint32_t pack_rgba32(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
+{
+    return (static_cast<uint32_t>(r)) 
+        |  (static_cast<uint32_t>(g) << 8)
+        |  (static_cast<uint32_t>(b) << 16)
+        |  (static_cast<uint32_t>(a) << 24);
+}
+
+constexpr uint32_t GB_PALETTE_RGBA32[4] = {
+    pack_rgba32(0x9B, 0xBC, 0x0F), // Lightest
+    pack_rgba32(0x8B, 0xAC, 0x0F), // Light
+    pack_rgba32(0x30, 0x62, 0x30), // Dark
+    pack_rgba32(0x0F, 0x38, 0x0F)  // Darkest
+};
+
+struct TileBytes
+{
+    uint8_t byte1;
+    uint8_t byte2;
+};
+
+struct SpritePixel
+{
+    uint8_t color;
+    uint8_t priority;
+    bool present = false;
+
+};
+
 struct PPU
 {
     // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
     std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT> framebuffer = {};
     
-    // RGBA framebuffer for rendering (4 bytes per pixel)
-    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT * 4> rgba_buffer = {};
+    std::array<uint32_t, SCREEN_WIDTH * SCREEN_HEIGHT> rgba_buffer = {};
 
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
+
+    std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
 
     PPUMode mode = PPUMode::OAMSearch;
     uint8_t scanline = 0;            // Current scanline (0-153)
@@ -124,11 +163,22 @@ struct PPU
     // Request interrupt
     void request_interrupt(Memory& memory, uint8_t interrupt_bit);
 
-    // Get the color index of a pixel from a tile, given its coordinates and tile data
-    uint8_t get_tile_pixel(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, uint8_t palette, Memory& memory);
-
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 
-    int get_sprite_pixel(const Sprite& sprite, int screen_x, Memory& memory);
+    int current_oam_row() const;
+    void corrupt_oam(Memory& memory, OamCorruption type);
+
+
+    TileBytes fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory);
+    TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 };
+
+// oam corruption helpers
+uint16_t oam_word(const Memory& memory, int row, int word);
+void set_oam_word(Memory& memory, int row, int word, uint16_t value);
+void copy_oam_tail(Memory& memory, int dst, int src);
+void copy_oam_row(Memory& memory, int dst, int src);
+void write_corruption(Memory& memory, int row);
+void read_corruption(Memory& memory, int row);
+void read_incdec_corruption(Memory& memory, int row);

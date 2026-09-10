@@ -1,6 +1,7 @@
 #include "memory.h"
 #include "constants.h"
 #include "apu.h" 
+#include "gameboy.h"
 #include <cstdio>
 #include <ctime>
 
@@ -97,7 +98,7 @@ uint8_t Memory::read(uint16_t addr) const
     // VRAM: $8000-$9FFF
     if (addr < ADDR_EXT_RAM_START)
     {
-        return vram[addr - ADDR_VRAM_START];
+        return read_vram(addr);
     }
     
     // External RAM: $A000-$BFFF
@@ -145,7 +146,7 @@ uint8_t Memory::read(uint16_t addr) const
     // OAM: $FE00-$FE9F
     if (addr < ADDR_OAM_END)
     {
-        return oam[addr - OAM_BASE];
+        return read_oam(addr);
     }
     
     // Prohibited area: $FEA0-$FEFF
@@ -581,4 +582,39 @@ void Memory::load_battery(const std::string& rom_path)
 
         fclose(file);
     }
+}
+
+uint8_t Memory::read_vram(uint16_t addr) const
+{
+    return vram[addr - ADDR_VRAM_START];    
+}
+
+uint8_t Memory::read_oam(uint16_t addr) const
+{
+    return oam[addr - OAM_BASE];
+}
+
+uint8_t Memory::read_io_raw(uint16_t addr) const
+{
+    return io[addr - ADDR_IO_START];
+}
+
+void Memory::write_io_raw(uint16_t addr, uint8_t value)
+{
+    io[addr - ADDR_IO_START] = value;
+}
+
+void Memory::tick_cycle(int cycles)
+{
+    gameboy->on_memory_cycle(cycles);
+}
+
+void Memory::oam_bug(OamCorruption type)
+{
+    gameboy->ppu.corrupt_oam(*this, type);
+}
+
+bool is_oam_bug_range(uint16_t addr)
+{
+    return (addr & 0xFF00) == 0xFE00;
 }
