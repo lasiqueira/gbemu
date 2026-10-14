@@ -183,4 +183,19 @@ void GameBoy::apply_post_boot_state()
     memory.write(IO_WY, 0x00);
     memory.write(IO_WX, 0x00);
     memory.write(IO_IF, 0x00);
+
+    if(cgb_mode)
+    {
+        cpu.af.pair = 0x1180;
+        cpu.bc.pair = 0x0000;
+        cpu.de.pair = 0xFF56;
+        cpu.hl.pair = 0x000D;
+
+        memory.write_io_raw(IO_VBK, 0xFF); // VRAM bank 0 selected (bit = clear, rest read as 1)
+        memory.write_io_raw(IO_SVBK, 0xF8); // WRAM bank 1
+        memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
+        memory.write_io_raw(IO_HDMA5, 0xFF); // No transfer active
+        memory.write_io_raw(IO_OPRI, 0x00); // CGB (OAM-order) object priority
+        // TODO set bg palette ram with white
+    }
 }

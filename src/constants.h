@@ -29,6 +29,13 @@ constexpr uint16_t IO_WY     = 0xFF4A; // Window Y Position
 constexpr uint16_t IO_WX     = 0xFF4B; // Window X Position
 constexpr uint16_t IO_IE     = 0xFFFF; // Interrupt Enable
 
+// CGB registers
+constexpr uint16_t IO_VBK    = 0xFF4F; // VRAM Bank
+constexpr uint16_t IO_SVBK   = 0xFF70; // WRAM Bank
+constexpr uint16_t IO_HDMA5  = 0xFF55; // HDMA5
+constexpr uint16_t IO_OPRI   = 0xFF6C; // CGB (OAM-order) object priority
+constexpr uint16_t IO_KEY1   = 0xFF4D; // CGB Speed Switch
+
 // Memory map region boundaries
 constexpr uint16_t ADDR_ROM_BANK0_END  = 0x4000; // End of fixed ROM bank 0
 constexpr uint16_t ADDR_VRAM_START     = 0x8000; // Start of VRAM / end of switchable ROM
