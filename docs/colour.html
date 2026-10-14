@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Boy Color - Game Boy Emulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Game Boy Emulator</h1>
+        <p>A C++ Game Boy emulator development journey</p>
+    </header>
+
+    <nav class="page-nav">
+        <a href="apu.html">← Audio (APU)</a>
+        <span class="current">Game Boy Color</span>
+        <a href="index.html">Index →</a>
+    </nav>
+
+    <main>
+        <article class="content">
+        <h2>Game Boy Color</h2>
+        <p><em>Adding CGB support while keeping full DMG accuracy — Phase 0: model plumbing (in progress)</em></p>
+
+        <section>
+            <h2>Design Decision — DMG Stays, Model Is Chosen at Boot</h2>
+            <p>
+                DMG support is kept permanently. The Blargg DMG regression suite
+                (<code>cpu_instrs</code>, <code>instr_timing</code>, <code>mem_timing</code>,
+                <code>mem_timing-2</code>, <code>oam_bug</code>, <code>dmg_sound</code>) is the accuracy baseline
+                established while building the CPU, bus timing, OAM bug and APU quirks. Dropping DMG would discard it.
+            </p>
+            <p>
+                The model is selected at boot and cannot be hot-swapped, matching SameBoy, BGB and mGBA. The model
+                determines boot register values, palette RAM contents, OAM-bug presence and PPU behaviour, so
+                changing it mid-run is meaningless — it requires a full machine reset.
+            </p>
+            <table>
+                <tr><th>Mode</th><th>Hardware</th><th>Cartridge</th><th>Notes</th></tr>
+                <tr><td><strong>DMG</strong></td><td>DMG</td><td>any</td><td>Existing behaviour, unchanged</td></tr>
+                <tr><td><strong>CGB</strong></td><td>CGB</td><td>CGB (<code>$0143</code> = <code>$80</code>/<code>$C0</code>)</td><td>Colour, banking, double speed</td></tr>
+                <tr><td><strong>CGB-in-DMG-compat</strong></td><td>CGB</td><td>DMG</td><td>A real CGB colourises a DMG game via its boot ROM</td></tr>
+            </table>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/CGB_Registers.html" target="_blank">Pandocs — CGB Registers</a></em></p>
+        </section>
+
+        <section>
+            <h2>Phase 0 — Knowing Which Machine We Are</h2>
+            <p>
+                The first two steps change nothing about rendering or timing. They only establish which hardware
+                model is being emulated and what the machine looks like right after the (skipped) boot ROM. Every
+                Blargg result must stay identical.
+            </p>
+
+            <h3>Detecting the Cartridge</h3>
+            <p>Header byte <code>$0143</code> is the CGB flag:</p>
+            <table>
+                <tr><th>Value</th><th>Meaning</th></tr>
+                <tr><td><code>$80</code></td><td>CGB-enhanced — runs on both DMG and CGB</td></tr>
+                <tr><td><code>$C0</code></td><td>CGB-only</td></tr>
+                <tr><td>anything else</td><td>DMG cartridge; a real CGB runs it in DMG-compat mode</td></tr>
+            </table>
+            <p>
+                <code>Memory::load_rom()</code> reads it next to the other header bytes
+                (<code>$0147</code>, <code>$0148</code>, <code>$0149</code>) and stores it in a new
+                <code>cgb_flag</code> member:
+            </p>
+            <pre><code>constexpr uint16_t ROM_HEADER_CGB_FLAG = 0x0143; // constants.h
+
+cgb_flag = rom[ROM_HEADER_CGB_FLAG];             // Memory::load_rom</code></pre>
+
+            <h3>Model State</h3>
+            <pre><code>enum class Model { DMG, CGB };
+
+// on GameBoy:
+Model requested_model = Model::DMG; // what the user asked for
+bool  model_is_auto   = true;
+Model model           = Model::DMG; // resolved at load_rom time
+bool  cgb_mode        = false;      // model == Model::CGB
+bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</code></pre>
+            <p>
+                <code>dmg_compat</code> is a sub-mode of CGB, not a third <code>Model</code> value. A DMG-compat
+                machine is CGB hardware — it has banked VRAM/WRAM, palette RAM and double speed — it just renders a
+                DMG game through a colourised palette.
+            </p>
+            <pre><code>void GameBoy::set_cartridge_mode()
+{
+    bool cart_is_cgb = (memory.cgb_flag == 0x80 || memory.cgb_flag == 0xC0);
+    model      = model_is_auto ? (cart_is_cgb ? Model::CGB : Model::DMG) : requested_model;
+    cgb_mode   = (model == Model::CGB);
+    dmg_compat = (cgb_mode &amp;&amp; !cart_is_cgb);
+}</code></pre>
+
+            <h3>The Ordering Trap</h3>
+            <p>
+                The emulator doesn't run a boot ROM, so <code>reset()</code> used to hand-write the post-boot
+                state. But that state depends on the model, and the model isn't known until the ROM header has been
+                parsed — which happens <em>after</em> <code>reset()</code>. Setting a CGB-specific value in
+                <code>reset()</code> would always see <code>cgb_mode == false</code>.
+            </p>
+            <p>The fix is to split the work into three steps and call them in order from <code>load_rom()</code>:</p>
+            <pre><code>void GameBoy::load_rom(const std::vector&lt;uint8_t&gt;&amp; rom, const std::string&amp; rom_path)
+{
+    reset();                  // clear state, relink pointers
+    memory.load_rom(rom);     // parses the header, fills cgb_flag
+    set_cartridge_mode();     // resolve model / cgb_mode / dmg_compat
+    apply_post_boot_state();  // now model-specific values can be applied
+    memory.load_battery(rom_path);
+}</code></pre>
+            <p>
+                One more subtlety: <code>reset()</code> must <em>not</em> touch <code>model_is_auto</code> or
+                <code>requested_model</code>. They are set from the command line before <code>load_rom()</code> is
+                called, so resetting them would silently discard <code>--model</code>. Only the resolved
+                <code>model</code>, <code>cgb_mode</code> and <code>dmg_compat</code> are cleared, since
+                <code>set_cartridge_mode()</code> recomputes them. Consequently <code>reset()</code> no longer applies
+                post-boot state by itself — a standalone reset (a hotkey, later) has to call
+                <code>apply_post_boot_state()</code> too.
+            </p>
+
+            <h3>Command Line</h3>
+            <p>The model can be forced from the command line; <code>auto</code> is the default:</p>
+            <pre><code>gbemu.exe &lt;rom&gt; [--disassemble|-d] [--headless] [--model=auto|dmg|cgb]</code></pre>
+            <p>
+                An unrecognised value is rejected with an error rather than falling back to a default. After loading,
+                the resolved model, <code>cgb_mode</code> and <code>dmg_compat</code> are printed, which is the quickest
+                way to confirm detection: a DMG ROM run with <code>--model=cgb</code> should report
+                <code>CGB mode: Yes</code> and <code>DMG compatibility mode: Yes</code>.
+            </p>
+        </section>
+
+        <section>
+            <h2>Post-Boot State per Model</h2>
+            <p>
+                A real boot ROM leaves the CPU registers and several I/O registers in model-specific states before
+                handing control to the cartridge at <code>$0100</code>. The CPU constructor still initialises the DMG
+                values; <code>apply_post_boot_state()</code> overrides them when <code>cgb_mode</code> is set.
+            </p>
+
+            <h3>CPU Registers</h3>
+            <table>
+                <tr><th>Register</th><th>DMG</th><th>CGB</th></tr>
+                <tr><td><code>AF</code></td><td><code>$01B0</code></td><td><code>$1180</code></td></tr>
+                <tr><td><code>BC</code></td><td><code>$0013</code></td><td><code>$0000</code></td></tr>
+                <tr><td><code>DE</code></td><td><code>$00D8</code></td><td><code>$FF56</code></td></tr>
+                <tr><td><code>HL</code></td><td><code>$014D</code></td><td><code>$000D</code></td></tr>
+                <tr><td><code>SP</code></td><td><code>$FFFE</code></td><td><code>$FFFE</code></td></tr>
+                <tr><td><code>PC</code></td><td><code>$0100</code></td><td><code>$0100</code></td></tr>
+            </table>
+            <p>
+                <strong><code>A == $11</code> is the CGB detection contract.</strong> Every CGB game reads
+                <code>A</code> at entry and takes its monochrome code path if it isn't <code>$11</code>. Getting this
+                wrong makes a CGB ROM boot, run and render in greyscale with none of the colour code ever executing —
+                a failure that looks like a PPU bug. <code>B</code> bit 0 distinguishes CGB (<code>0</code>) from GBA
+                (<code>1</code>); it is <em>not</em> a DMG-compat flag. We emulate a CGB, so <code>B = $00</code>.
+            </p>
+
+            <h3>New I/O Registers</h3>
+            <p>
+                These registers don't exist on DMG, so they're only initialised when <code>cgb_mode</code> is set.
+                The values are what each register <em>reads back as</em> after boot:
+            </p>
+            <table>
+                <tr><th>Register</th><th>Address</th><th>Value</th><th>Meaning</th></tr>
+                <tr><td>VBK</td><td><code>$FF4F</code></td><td><code>$FF</code></td><td>VRAM bank 0 selected (bit 0 clear, the rest read as 1)</td></tr>
+                <tr><td>SVBK</td><td><code>$FF70</code></td><td><code>$F8</code></td><td>WRAM bank 1</td></tr>
+                <tr><td>KEY1</td><td><code>$FF4D</code></td><td><code>$7E</code></td><td>Normal speed, switch not armed</td></tr>
+                <tr><td>HDMA5</td><td><code>$FF55</code></td><td><code>$FF</code></td><td>No transfer active</td></tr>
+                <tr><td>OPRI</td><td><code>$FF6C</code></td><td><code>$00</code></td><td>CGB (OAM-order) object priority</td></tr>
+                <tr><td>BG palette RAM</td><td>—</td><td>all <code>$FF</code></td><td>The boot ROM initialises every BG colour to white</td></tr>
+                <tr><td>OBJ palette RAM</td><td>—</td><td>unspecified</td><td>Left random on real hardware</td></tr>
+            </table>
+            <pre><code>if (cgb_mode)
+{
+    cpu.af.pair = 0x1180;
+    cpu.bc.pair = 0x0000;
+    cpu.de.pair = 0xFF56;
+    cpu.hl.pair = 0x000D;
+
+    memory.write_io_raw(IO_VBK,   0xFF);
+    memory.write_io_raw(IO_SVBK,  0xF8);
+    memory.write_io_raw(IO_KEY1,  0x7E);
+    memory.write_io_raw(IO_HDMA5, 0xFF);
+    memory.write_io_raw(IO_OPRI,  0x00);
+    std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
+}</code></pre>
+
+            <h3>BG Palette RAM</h3>
+            <p>
+                The only storage added in this phase is the BG palette RAM array in <code>Memory</code>: 8 palettes ×
+                4 colours × 2 bytes. Palette RAM isn't mapped into the address space; it is only reachable through
+                the index/data register pairs, which arrive with palette support.
+            </p>
+            <pre><code>uint8_t bg_palette_ram[64] = {}; // memory.h</code></pre>
+            <p>
+                <code>Memory</code> is zero-initialised on reset, and zero decodes to black, so the boot ROM's
+                behaviour has to be applied explicitly. Colours are RGB555 (little-endian, bit 15 ignored), so filling
+                every byte with <code>$FF</code> gives <code>$7FFF</code>, which is white. OBJ palette RAM needs no
+                setup because real hardware leaves it undefined.
+            </p>
+
+            <h3>Why <code>write_io_raw</code> and Not <code>write</code></h3>
+            <p>
+                Those post-boot values are read-back values, not values a game would write. Going through the normal
+                bus write would be wrong once the registers get side effects: writing <code>$FF</code> to VBK would
+                select VRAM bank 1 (<code>value &amp; 1</code>), and writing <code>$FF</code> to HDMA5 has bit 7 set
+                with a length of <code>$7F</code>, which would start an HBlank DMA. <code>write_io_raw</code> stores
+                the byte straight into the register file with no side effects. As each feature lands and gets a real
+                member (<code>vram_bank</code>, <code>wram_bank</code>, <code>double_speed</code>,
+                <code>hdma_active</code>), the member's default already matches the post-boot value and the raw write
+                can be dropped.
+            </p>
+        </section>
+
+        <section>
+            <h2>Status</h2>
+            <ul>
+                <li>✓ CGB flag parsed from the cartridge header</li>
+                <li>✓ Model resolved at load time (<code>auto</code> / <code>dmg</code> / <code>cgb</code>), selectable with <code>--model</code></li>
+                <li>✓ Reset split so model-specific post-boot state is applied after the model is known</li>
+                <li>✓ CGB CPU register values and new I/O register read-back values</li>
+                <li>✓ BG palette RAM storage added and initialised to white</li>
+                <li>⏳ VRAM banking, WRAM banking, palette registers, tile attributes, double speed, HDMA — later phases</li>
+            </ul>
+        </section>
+
+        </article>
+    </main>
+
+    <nav class="page-nav bottom">
+        <a href="apu.html">← Audio (APU)</a>
+        <a href="index.html">Index →</a>
+    </nav>
+
+    <footer>
+        <p><a href="https://github.com/lasiqueira/gbemu">View on GitHub</a></p>
+    </footer>
+</body>
+</html>

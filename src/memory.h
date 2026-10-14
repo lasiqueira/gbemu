@@ -49,12 +49,14 @@ struct Memory {
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
     uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
+    uint8_t bg_palette_ram[64] = {}; // CGB BG CRAM: 8 palettes x 4 colours x 2 bytes
+    uint8_t obj_palette_ram[64] = {}; // CGB OBJ CRAM: 8 palettes x 4 colours x 2 bytes
     
     APU* apu = nullptr; // Pointer to APU for audio register access
     GameBoy* gameboy = nullptr; // Pointer to Game Boy
 
     uint8_t cgb_flag = 0;
-    
+
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
     bool has_battery = false;

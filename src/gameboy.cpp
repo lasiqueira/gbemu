@@ -1,4 +1,5 @@
 #include "gameboy.h"
+#include <cstring>
 
 void GameBoy::reset()
 {
@@ -196,6 +197,6 @@ void GameBoy::apply_post_boot_state()
         memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
         memory.write_io_raw(IO_HDMA5, 0xFF); // No transfer active
         memory.write_io_raw(IO_OPRI, 0x00); // CGB (OAM-order) object priority
-        // TODO set bg palette ram with white
+        std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
     }
 }
