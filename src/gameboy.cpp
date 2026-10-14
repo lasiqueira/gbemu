@@ -7,30 +7,26 @@ void GameBoy::reset()
     apu = APU{};
     apu.sample_buffer.reserve(2048); // ~3 frames of stereo samples at 44100Hz
     memory = Memory{};
+    
+    //requested model must be persistent
+    model = Model::DMG; // Default actual model
+    cgb_mode = false;
+    dmg_compat = false;
 
     memory.apu = &apu; // Link APU to memory for audio register access
     memory.gameboy = this; // Link GameBoy to memory for cycle callbacks
-
-    // Post-boot I/O register state (skipping boot ROM)
-    memory.write(IO_JOYPAD, 0x3F);
-    memory.write(IO_LCDC, 0x91); // LCD on, BG on
-    memory.write(IO_STAT, 0x00);
-    memory.write(IO_SCY, 0x00);
-    memory.write(IO_SCX, 0x00);
-    memory.write(IO_LY, 0x00);
-    memory.write(IO_LYC, 0x00);
-    memory.write(IO_BGP, 0xFC);  // Background palette (11 11 10 00)
-    memory.write(IO_OBP0, 0xFF);
-    memory.write(IO_OBP1, 0xFF);
-    memory.write(IO_WY, 0x00);
-    memory.write(IO_WX, 0x00);
-    memory.write(IO_IF, 0x00);
 }
 
 void GameBoy::load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path)
 {
     reset();
     memory.load_rom(rom);
+
+    // Determine if the cartridge is CGB capable
+    set_cartridge_mode();
+
+    apply_post_boot_state(); // Apply post-boot I/O register state
+
     memory.load_battery(rom_path); // Load battery RAM if applicable
 }
 
@@ -161,4 +157,30 @@ void GameBoy::on_memory_cycle(int cycles)
     apu.step(cycles, memory);
     memory.tick_timers(cycles);
 
+}
+
+void GameBoy::set_cartridge_mode()
+{
+    bool cart_is_cgb = (memory.cgb_flag == 0x80 || memory.cgb_flag == 0xC0);
+    model = model_is_auto ? (cart_is_cgb ? Model::CGB : Model::DMG) : requested_model;
+    cgb_mode = (model == Model::CGB);
+    dmg_compat = (cgb_mode && !cart_is_cgb);
+}
+
+void GameBoy::apply_post_boot_state()
+{
+    // Post-boot I/O register state (skipping boot ROM)
+    memory.write(IO_JOYPAD, 0x3F);
+    memory.write(IO_LCDC, 0x91); // LCD on, BG on
+    memory.write(IO_STAT, 0x00);
+    memory.write(IO_SCY, 0x00);
+    memory.write(IO_SCX, 0x00);
+    memory.write(IO_LY, 0x00);
+    memory.write(IO_LYC, 0x00);
+    memory.write(IO_BGP, 0xFC);  // Background palette (11 11 10 00)
+    memory.write(IO_OBP0, 0xFF);
+    memory.write(IO_OBP1, 0xFF);
+    memory.write(IO_WY, 0x00);
+    memory.write(IO_WX, 0x00);
+    memory.write(IO_IF, 0x00);
 }

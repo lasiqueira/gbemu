@@ -53,6 +53,8 @@ struct Memory {
     APU* apu = nullptr; // Pointer to APU for audio register access
     GameBoy* gameboy = nullptr; // Pointer to Game Boy
 
+    uint8_t cgb_flag = 0;
+    
     uint16_t num_rom_banks = 2;
     uint8_t num_ram_banks = 0;
     bool has_battery = false;

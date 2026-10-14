@@ -12,6 +12,7 @@ void Memory::load_rom(const std::vector<uint8_t>& rom_data)
     has_battery = false;
     has_rtc = false;
 
+    cgb_flag = rom[ROM_HEADER_CGB_FLAG];
     uint8_t cart_type = rom[ROM_HEADER_CART_TYPE];
     uint8_t rom_size = rom[ROM_HEADER_ROM_SIZE];
     uint8_t ram_size = rom[ROM_HEADER_RAM_SIZE];

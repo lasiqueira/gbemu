@@ -349,7 +349,7 @@ int main(int argc, char** argv)
     // Check command line arguments
     if (argc < 2)
     {
-        std::println(std::cerr, "Usage: {} <rom_path> [--disassemble|-d]", argv[0]);
+        std::println(std::cerr, "Usage: {} <rom_path> [--disassemble|-d] [--headless] [--model=auto|dmg|cgb]", argv[0]);
         return 1;
     }
     
@@ -359,6 +359,8 @@ int main(int argc, char** argv)
     // Check for disassemble flag
     bool headless_mode = false;
 
+    std::string model_arg = "auto"; // default model is auto
+
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
@@ -366,6 +368,8 @@ int main(int argc, char** argv)
             disassemble_mode = true;
         else if (arg == "--headless")
             headless_mode = true;
+        else if (arg.rfind("--model=", 0) == 0)
+            model_arg = arg.substr(8);
     }
 
     // Check if file exists
@@ -404,10 +408,28 @@ int main(int argc, char** argv)
         return 0;
     }
 
+    // Determine the requested Game Boy model based on the command line argument
+    gameboy.model_is_auto = (model_arg == "auto");
+    if (!gameboy.model_is_auto)
+    {
+        if (model_arg == "dmg")
+            gameboy.requested_model = Model::DMG;
+        else if (model_arg == "cgb")
+            gameboy.requested_model = Model::CGB;
+        else
+        {
+            std::println(std::cerr, "Unknown model: {}", model_arg);
+            return 1;
+        }
+    }
+
     // Initialize Game Boy and load ROM
     gameboy.load_rom(rom, rom_path);
 
     std::println("ROM loaded: {} bytes", rom.size());
+    std::println("Model selected: {}", gameboy.model == Model::DMG ? "DMG" : "CGB");
+    std::println("CGB mode: {}", gameboy.cgb_mode ? "Yes" : "No");
+    std::println("DMG compatibility mode: {}", gameboy.dmg_compat ? "Yes" : "No");
     std::println("Starting emulation...");
     std::println("");
 

@@ -50,6 +50,7 @@ constexpr uint32_t ROM_BANK_SIZE       = 0x4000; // 16 KiB per ROM bank
 constexpr uint32_t RAM_BANK_SIZE       = 0x2000; // 8 KiB per RAM bank
 
 // ROM header field offsets
+constexpr uint16_t ROM_HEADER_CGB_FLAG  = 0x0143; // CGB flag
 constexpr uint16_t ROM_HEADER_CART_TYPE = 0x0147; // Cartridge type
 constexpr uint16_t ROM_HEADER_ROM_SIZE  = 0x0148; // ROM size code
 constexpr uint16_t ROM_HEADER_RAM_SIZE  = 0x0149; // RAM size code
