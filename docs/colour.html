@@ -162,7 +162,7 @@ bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</cod
             </p>
             <table>
                 <tr><th>Register</th><th>Address</th><th>Value</th><th>Meaning</th></tr>
-                <tr><td>VBK</td><td><code>$FF4F</code></td><td><code>$FF</code></td><td>VRAM bank 0 selected (bit 0 clear, the rest read as 1)</td></tr>
+                <tr><td>VBK</td><td><code>$FF4F</code></td><td><code>$FE</code></td><td>VRAM bank 0 selected (bit 0 clear, the rest read as 1)</td></tr>
                 <tr><td>SVBK</td><td><code>$FF70</code></td><td><code>$F8</code></td><td>WRAM bank 1</td></tr>
                 <tr><td>KEY1</td><td><code>$FF4D</code></td><td><code>$7E</code></td><td>Normal speed, switch not armed</td></tr>
                 <tr><td>HDMA5</td><td><code>$FF55</code></td><td><code>$FF</code></td><td>No transfer active</td></tr>
@@ -177,7 +177,6 @@ bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</cod
     cpu.de.pair = 0xFF56;
     cpu.hl.pair = 0x000D;
 
-    memory.write_io_raw(IO_VBK,   0xFF);
     memory.write_io_raw(IO_SVBK,  0xF8);
     memory.write_io_raw(IO_KEY1,  0x7E);
     memory.write_io_raw(IO_HDMA5, 0xFF);

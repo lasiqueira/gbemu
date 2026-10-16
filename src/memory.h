@@ -43,7 +43,8 @@ struct Memory {
     std::vector<uint8_t> ext_ram;
     
     // Internal Game Boy memory
-    uint8_t vram[0x2000]  = {}; // $8000-$9FFF: Video RAM
+    uint8_t vram[0x4000]  = {}; // $8000-$9FFF: Video RAM (DMG) and CGB VRAM
+    uint8_t vram_bank = 0; // Current VRAM bank (CGB only)
     uint8_t wram[0x2000]  = {}; // $C000-$DFFF: Work RAM
     uint8_t oam[0xA0]     = {}; // $FE00-$FE9F: Sprite Attribute Table
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
@@ -109,6 +110,8 @@ struct Memory {
     void tick_cycle(int cycles);
 
     void oam_bug(OamCorruption type);
+
+    uint8_t read_vram_bank(uint16_t addr, uint8_t bank) const;
 };
 
 bool is_oam_bug_range(uint16_t addr);

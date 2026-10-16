@@ -99,7 +99,8 @@ uint8_t Memory::read(uint16_t addr) const
     // VRAM: $8000-$9FFF
     if (addr < ADDR_EXT_RAM_START)
     {
-        return read_vram(addr);
+        return read_vram_bank(addr, vram_bank);
+
     }
     
     // External RAM: $A000-$BFFF
@@ -200,6 +201,12 @@ uint8_t Memory::read(uint16_t addr) const
             return io[addr - ADDR_IO_START];
         }
 
+        if (addr == IO_VBK && gameboy->cgb_mode) 
+        {
+            return vram_bank | 0xFE;
+        }
+
+
         return io[addr - ADDR_IO_START];
     }
     
@@ -297,7 +304,7 @@ void Memory::write(uint16_t addr, uint8_t value)
     // VRAM: $8000-$9FFF
     if (addr < ADDR_EXT_RAM_START)
     {
-        vram[addr - ADDR_VRAM_START] = value;
+        vram[vram_bank * 0x2000 + (addr - ADDR_VRAM_START)] = value;
         return;
     }
     
@@ -411,6 +418,13 @@ void Memory::write(uint16_t addr, uint8_t value)
             io[addr - 0xFF00] = value;
             if (apu) apu->on_wave_ram_write(addr - 0xFF30, value);
         }
+
+        // VRAM Bank register (0xFF4F) - only writable in CGB mode
+        else if (addr == IO_VBK && gameboy->cgb_mode) 
+        {
+            vram_bank = value & 1;
+        }
+
         else
         {
             io[addr - ADDR_IO_START] = value;
@@ -587,7 +601,7 @@ void Memory::load_battery(const std::string& rom_path)
 
 uint8_t Memory::read_vram(uint16_t addr) const
 {
-    return vram[addr - ADDR_VRAM_START];    
+    return read_vram_bank(addr, 0);
 }
 
 uint8_t Memory::read_oam(uint16_t addr) const
@@ -618,4 +632,9 @@ void Memory::oam_bug(OamCorruption type)
 bool is_oam_bug_range(uint16_t addr)
 {
     return (addr & 0xFF00) == 0xFE00;
+}
+
+uint8_t Memory::read_vram_bank(uint16_t addr, uint8_t bank) const
+{
+    return vram[(bank * 0x2000) + (addr - ADDR_VRAM_START)];
 }
