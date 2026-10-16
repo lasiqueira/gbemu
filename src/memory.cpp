@@ -136,13 +136,13 @@ uint8_t Memory::read(uint16_t addr) const
     // Work RAM: $C000-$DFFF
     if (addr < ADDR_ECHO_RAM_START)
     {
-        return wram[addr - ADDR_WRAM_START];
+        return wram[wram_offset(addr)];
     }
     
     // Echo RAM: $E000-$FDFF (mirror of $C000-$DDFF)
     if (addr < OAM_BASE)
     {
-        return wram[addr - ADDR_ECHO_RAM_START];
+        return wram[wram_offset(addr)];
     }
     
     // OAM: $FE00-$FE9F
@@ -206,6 +206,10 @@ uint8_t Memory::read(uint16_t addr) const
             return vram_bank | 0xFE;
         }
 
+        if (addr == IO_SVBK && gameboy->cgb_mode)
+        {
+            return wram_bank | 0xF8; // Upper 5 bits always set
+        }
 
         return io[addr - ADDR_IO_START];
     }
@@ -332,14 +336,14 @@ void Memory::write(uint16_t addr, uint8_t value)
     // Work RAM: $C000-$DFFF
     if (addr < ADDR_ECHO_RAM_START)
     {
-        wram[addr - ADDR_WRAM_START] = value;
+        wram[wram_offset(addr)] = value;
         return;
     }
     
     // Echo RAM: $E000-$FDFF (mirror of $C000-$DDFF)
     if (addr < OAM_BASE)
     {
-        wram[addr - ADDR_ECHO_RAM_START] = value;
+        wram[wram_offset(addr)] = value;
         return;
     }
     
@@ -423,6 +427,13 @@ void Memory::write(uint16_t addr, uint8_t value)
         else if (addr == IO_VBK && gameboy->cgb_mode) 
         {
             vram_bank = value & 1;
+        }
+
+        // WRAM Bank register (0xFF70) - only writable in CGB mode
+        else if (addr == IO_SVBK && gameboy->cgb_mode)
+        {
+            wram_bank = value & 0x07;
+            if (wram_bank == 0) wram_bank = 1; // Bank 0 is not switchable
         }
 
         else
@@ -637,4 +648,11 @@ bool is_oam_bug_range(uint16_t addr)
 uint8_t Memory::read_vram_bank(uint16_t addr, uint8_t bank) const
 {
     return vram[(bank * 0x2000) + (addr - ADDR_VRAM_START)];
+}
+
+uint32_t Memory::wram_offset(uint16_t addr) const {
+    // Echo RAM mirrors $C000-$DDFF, so fold it down first
+    if(addr >= 0xE000) addr -= 0x2000;
+    if(addr < 0xD000) return addr - 0xC000; // fixed bank 0
+    return wram_bank * 0x1000 + (addr - 0xD000); // banked
 }

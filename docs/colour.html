@@ -21,7 +21,7 @@
     <main>
         <article class="content">
         <h2>Game Boy Color</h2>
-        <p><em>Adding CGB support while keeping full DMG accuracy — Phase 0: model plumbing (in progress)</em></p>
+        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–1: model plumbing and banked memory (in progress)</em></p>
 
         <section>
             <h2>Design Decision — DMG Stays, Model Is Chosen at Boot</h2>
@@ -212,6 +212,80 @@ bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</cod
         </section>
 
         <section>
+            <h2>Phase 1 — Banked Memory</h2>
+            <p>
+                CGB doubles both RAMs: 16 KiB of VRAM as two 8 KiB banks (<code>VBK</code>, <code>$FF4F</code>) and
+                32 KiB of WRAM as eight 4 KiB banks (<code>SVBK</code>, <code>$FF70</code>). On DMG the same code paths
+                must behave exactly as before.
+            </p>
+
+            <h3>VRAM Banking</h3>
+            <p>
+                Both banks hold tile data at <code>$8000–$97FF</code>; bank 1's <code>$9800–$9FFF</code> will later
+                hold tile map attributes instead of tile indices. The interesting part is who reads which bank, so the
+                accessors are split:
+            </p>
+            <ul>
+                <li><strong>CPU bus</strong> — reads and writes go through the currently selected bank:
+                    <code>read_vram_bank(addr, vram_bank)</code>.</li>
+                <li><strong>PPU</strong> — keeps <code>read_vram(addr)</code>, now defined as bank 0. Later the PPU
+                    will fetch a tile index from bank 0 and its attribute from bank 1 in the same operation, regardless
+                    of what <code>VBK</code> says, so it needs to name the bank explicitly.</li>
+            </ul>
+            <pre><code>uint8_t Memory::read_vram(uint16_t addr) const              // PPU, bank 0
+{
+    return read_vram_bank(addr, 0);
+}
+
+// Memory::read, $8000-$9FFF: CPU follows VBK
+return read_vram_bank(addr, vram_bank);</code></pre>
+            <p>
+                A trap worth remembering: the bus read used to call <code>read_vram()</code> directly. Redefining that
+                accessor as bank 0 silently pins every CPU read to bank 0 unless the bus read is re-pointed. Writes
+                index <code>vram[vram_bank * 0x2000 + …]</code> directly, so they were unaffected.
+            </p>
+            <p>
+                The register is virtual: reads return <code>vram_bank | 0xFE</code> and writes store
+                <code>value &amp; 1</code>, both gated on <code>cgb_mode</code>. On DMG the address falls through to the
+                generic register file, like any other unmapped register. Because of this, the post-boot value
+                (<code>$FE</code>, bank 0) needs no explicit initialisation, and the C2 raw write for
+                <code>VBK</code> is gone.
+            </p>
+
+            <h3>WRAM Banking</h3>
+            <p>
+                <code>$C000–$CFFF</code> is always bank 0; <code>$D000–$DFFF</code> selects banks 1–7, and writing
+                0 to <code>SVBK</code> selects bank 1. Echo RAM mirrors <code>$C000–$DDFF</code>, so it has to follow the
+                selected bank too. Four places index <code>wram</code> (read and write for the main range, read and write
+                for Echo RAM), and they previously used different base subtractions, so they now share one helper:
+            </p>
+            <pre><code>uint32_t Memory::wram_offset(uint16_t addr) const {
+    if (addr &gt;= 0xE000) addr -= 0x2000;          // fold Echo RAM onto $C000-$DDFF
+    if (addr &lt; 0xD000) return addr - 0xC000;     // fixed bank 0
+    return wram_bank * 0x1000 + (addr - 0xD000); // banked
+}</code></pre>
+            <p>
+                <code>wram_bank</code> defaults to 1, which makes the CGB layout with bank 1 selected identical to the
+                flat DMG mapping — that is why bank 0 must alias to bank 1. It also means a mistake in this helper can
+                hide behind a green DMG regression: an early version had the <code>$D000</code> comparison inverted, and
+                the DMG results were unchanged only because the banked formula cancels out when <code>wram_bank == 1</code>.
+                The DMG suites can't verify this commit; only a CGB check can (distinct values at <code>$D000</code>
+                under banks 1 and 2, bank 0 reading as bank 1, Echo RAM following the bank).
+            </p>
+            <p>
+                <code>SVBK</code> reads return <code>wram_bank | 0xF8</code> and writes store
+                <code>value &amp; 7</code> (0 becomes 1), gated on <code>cgb_mode</code>. As with <code>VBK</code>, the
+                post-boot value comes for free from the member default, so its raw write can also be removed.
+            </p>
+
+            <h3>Verification</h3>
+            <p>
+                DMG regression unchanged: all Blargg suites match their previous results, with <code>dmg_sound</code>
+                still 11/12 (test 10 is a known open failure).
+            </p>
+        </section>
+
+        <section>
             <h2>Status</h2>
             <ul>
                 <li>✓ CGB flag parsed from the cartridge header</li>
@@ -219,7 +293,9 @@ bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</cod
                 <li>✓ Reset split so model-specific post-boot state is applied after the model is known</li>
                 <li>✓ CGB CPU register values and new I/O register read-back values</li>
                 <li>✓ BG palette RAM storage added and initialised to white</li>
-                <li>⏳ VRAM banking, WRAM banking, palette registers, tile attributes, double speed, HDMA — later phases</li>
+                <li>✓ VRAM banking (<code>VBK</code>) with a bank-0 PPU accessor</li>
+                <li>✓ WRAM banking (<code>SVBK</code>) behind a single <code>wram_offset()</code> helper</li>
+                <li>⏳ Palette registers, tile attributes, double speed, HDMA — later phases</li>
             </ul>
         </section>
 

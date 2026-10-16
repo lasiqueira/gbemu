@@ -45,7 +45,8 @@ struct Memory {
     // Internal Game Boy memory
     uint8_t vram[0x4000]  = {}; // $8000-$9FFF: Video RAM (DMG) and CGB VRAM
     uint8_t vram_bank = 0; // Current VRAM bank (CGB only)
-    uint8_t wram[0x2000]  = {}; // $C000-$DFFF: Work RAM
+    uint8_t wram[0x8000]  = {}; // $C000-$DFFF: Work RAM
+    uint8_t wram_bank = 1; // Current WRAM bank (CGB only)
     uint8_t oam[0xA0]     = {}; // $FE00-$FE9F: Sprite Attribute Table
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
@@ -112,6 +113,8 @@ struct Memory {
     void oam_bug(OamCorruption type);
 
     uint8_t read_vram_bank(uint16_t addr, uint8_t bank) const;
+
+    uint32_t wram_offset(uint16_t addr) const;
 };
 
 bool is_oam_bug_range(uint16_t addr);
