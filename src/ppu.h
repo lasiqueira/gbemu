@@ -131,9 +131,8 @@ struct SpritePixel
 
 struct PPU
 {
-    // Framebuffer: 160x144 pixels, each pixel is a palette index (0-3)
-    std::array<uint8_t, SCREEN_WIDTH * SCREEN_HEIGHT> framebuffer = {};
     
+    // RGBA buffer for the current frame (160x144 pixels)
     std::array<uint32_t, SCREEN_WIDTH * SCREEN_HEIGHT> rgba_buffer = {};
 
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
@@ -153,9 +152,6 @@ struct PPU
     
     // Render the current scanline
     void render_scanline(Memory& memory);
-    
-    // Convert framebuffer to RGBA format
-    void update_rgba_buffer();
     
     // Set PPU mode and update STAT register
     void set_mode(PPUMode new_mode, Memory& memory);

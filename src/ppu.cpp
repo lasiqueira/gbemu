@@ -18,8 +18,7 @@ void PPU::step(int cycles, Memory& memory)
             scanline = 0;
             window_line_counter = 0;
             memory.write_io_raw(IO_LY, 0);
-            framebuffer.fill(0);
-            update_rgba_buffer();
+            rgba_buffer.fill(GB_PALETTE_RGBA32[0]);
             frame_ready = true;
         }
         return;
@@ -84,7 +83,6 @@ void PPU::step(int cycles, Memory& memory)
                     // Enter V-Blank
                     set_mode(PPUMode::VBlank, memory);
                     request_interrupt(memory, INT_VBLANK);
-                    update_rgba_buffer();
                     frame_ready = true;
                 }
                 else
@@ -142,7 +140,7 @@ void PPU::render_scanline(Memory& memory)
     {
         for (int x = 0; x < SCREEN_WIDTH; x++)
         {
-            framebuffer[scanline * SCREEN_WIDTH + x] = 0; // Lightest color
+            rgba_buffer[scanline * SCREEN_WIDTH + x] = GB_PALETTE_RGBA32[0]; // Lightest color
         }
         return;
     }
@@ -212,9 +210,9 @@ void PPU::render_scanline(Memory& memory)
         }
 
         int bit_pos = 7 - (pixel_x % 8);
-        uint8_t color_id = ((cached_tile_bytes.byte2 >> bit_pos) & 1) << 1 | ((cached_tile_bytes.byte1 >> bit_pos) & 1);
-
-        uint8_t bg_color = (bgp >> (color_id * 2)) & 0x03;
+        uint8_t bg_color_id = ((cached_tile_bytes.byte2 >> bit_pos) & 1) << 1 | ((cached_tile_bytes.byte1 >> bit_pos) & 1);
+        bool bg_attr_priority = false;
+        uint8_t bg_color = (bgp >> (bg_color_id * 2)) & 0x03;
 
         int sprite_color = -1;
         uint8_t sprite_priority = 0;
@@ -234,7 +232,7 @@ void PPU::render_scanline(Memory& memory)
         else if(sprite_priority & SPRITE_PRIORITY)
         {
             // Sprite behind BG, but BG color 0 is transparent
-            if(bg_color == 0)
+            if(bg_color_id == 0)
             {
                 // BG color 0 is transparent, so sprite is visible
                 final_color = sprite_color;
@@ -251,21 +249,12 @@ void PPU::render_scanline(Memory& memory)
             final_color = sprite_color; 
         }      
 
-        framebuffer[scanline * SCREEN_WIDTH + x] = final_color;
+        rgba_buffer[scanline * SCREEN_WIDTH + x] = GB_PALETTE_RGBA32[final_color];
     }
 
     if(window_rendered_this_line)
     {
         window_line_counter++;
-    }
-}
-
-void PPU::update_rgba_buffer()
-{
-    uint32_t* dst = rgba_buffer.data();
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-    {
-        dst[i] = GB_PALETTE_RGBA32[framebuffer[i]];
     }
 }
 
