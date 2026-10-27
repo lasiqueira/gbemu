@@ -150,6 +150,7 @@ struct PPU
     bool lcd_off = false;          // True if LCD is disabled (LCDC bit 7 is 0)
     uint16_t mode_cycles = 0;         // Cycles spent in current mode
     bool cgb_mode = false;
+    bool dmg_compat = false; // CGB hardware running a DMG cartridge
     
     // Update PPU state for the given number of cycles
     void step(int cycles, Memory& memory);

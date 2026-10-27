@@ -214,9 +214,10 @@ void PPU::render_scanline(Memory& memory)
         bool bg_attr_priority = cached_tile_bytes.attr & 0x80;
         uint8_t bg_color = (bgp >> (bg_color_id * 2)) & 0x03;
         
-        uint32_t bg_rgba = cgb_mode
-        ? bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id]
-        : GB_PALETTE_RGBA32[bg_color];
+        uint32_t bg_rgba;
+        if (!cgb_mode)        bg_rgba = GB_PALETTE_RGBA32[bg_color];
+        else if (dmg_compat)  bg_rgba = bg_palette_rgba[bg_color]; // BGP picks within BG palette 0
+        else                  bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id];
 
         int sprite_color = -1;
         uint8_t sprite_priority = 0;
@@ -362,7 +363,7 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     uint8_t tile_y = pixel_y / 8;
     uint8_t tile_x = pixel_x / 8;
     uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
-    uint8_t attr = cgb_mode ? memory.read_vram_bank(tile_map_addr, 1) : 0;
+    uint8_t attr = (cgb_mode && !dmg_compat) ? memory.read_vram_bank(tile_map_addr, 1) : 0;
     uint8_t bank = (attr >> 3) & 1;
     uint8_t tile_id = memory.read_vram(tile_map_addr);
     

@@ -167,6 +167,7 @@ void GameBoy::set_cartridge_mode()
     cgb_mode = (model == Model::CGB);
     ppu.cgb_mode = cgb_mode;
     dmg_compat = (cgb_mode && !cart_is_cgb);
+    ppu.dmg_compat = dmg_compat;
 }
 
 void GameBoy::apply_post_boot_state()
