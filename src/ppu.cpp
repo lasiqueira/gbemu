@@ -414,6 +414,54 @@ void PPU::corrupt_oam(Memory& memory, OamCorruption type)
     }
 }
 
+uint32_t PPU::cgb_color_to_rgba(uint16_t rgb555) const
+{
+    uint8_t r5 = rgb555 & 0x1F;
+    uint8_t g5 = (rgb555 >> 5) & 0x1F;
+    uint8_t b5 = (rgb555 >> 10) & 0x1F;
+    
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+
+    if(color_correction)
+    {
+        r = (r5 * 13 + g5 * 2 + b5) >> 1;
+        g = (g5 * 3 + b5) << 1;
+        b = (r5 * 3 + g5 * 2 + b5 * 11) >> 1;
+    }
+    else
+    {
+         r = r5 << 3;
+        g = g5 << 3;
+        b = b5 << 3;
+    }
+    return pack_rgba32(r, g, b);
+}
+
+void PPU::update_palette_color(bool obj, int colour, uint16_t rgb555)
+{
+    if(obj)
+    {
+        obj_palette_rgba[colour] = cgb_color_to_rgba(rgb555);
+    }
+    else
+    {
+        bg_palette_rgba[colour] =cgb_color_to_rgba(rgb555);
+    }
+}
+
+void PPU::rebuild_palette_cache(const Memory& memory)
+{
+    for(int i = 0; i < 32; i++)
+    {
+        uint16_t bg_color = memory.bg_palette_ram[i*2] | memory.bg_palette_ram[i*2+1] << 8;
+        uint16_t obj_color = memory.obj_palette_ram[i*2] | memory.obj_palette_ram[i*2+1] << 8;
+        update_palette_color(false, i, bg_color);
+        update_palette_color(true, i, obj_color);
+    }
+}
+
 uint16_t oam_word(const Memory& memory, int row, int word)
 {
     int i = row * 8 + word * 2;

@@ -53,6 +53,8 @@ struct Memory {
     uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
     uint8_t bg_palette_ram[64] = {}; // CGB BG CRAM: 8 palettes x 4 colours x 2 bytes
     uint8_t obj_palette_ram[64] = {}; // CGB OBJ CRAM: 8 palettes x 4 colours x 2 bytes
+    uint8_t bcps = 0;   // $FF68
+    uint8_t ocps = 0;   // $FF6A
     
     APU* apu = nullptr; // Pointer to APU for audio register access
     GameBoy* gameboy = nullptr; // Pointer to Game Boy

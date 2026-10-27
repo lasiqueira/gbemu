@@ -211,6 +211,26 @@ uint8_t Memory::read(uint16_t addr) const
             return wram_bank | 0xF8; // Upper 5 bits always set
         }
 
+        if(addr == IO_BGPI && gameboy->cgb_mode)
+        {
+            return bcps | 0x40; // Upper bit always set
+        }
+
+        if(addr == IO_OBPI && gameboy->cgb_mode)
+        {
+            return ocps | 0x40; // Upper bit always set
+        }
+
+        if(addr == IO_BGPD && gameboy->cgb_mode)
+        {
+            return bg_palette_ram[bcps & 0x3F];
+        }
+
+        if(addr == IO_OBPD && gameboy->cgb_mode)
+        {
+            return obj_palette_ram[ocps & 0x3F];
+        }
+
         return io[addr - ADDR_IO_START];
     }
     
@@ -436,6 +456,35 @@ void Memory::write(uint16_t addr, uint8_t value)
             if (wram_bank == 0) wram_bank = 1; // Bank 0 is not switchable
         }
 
+        else if(addr == IO_BGPI && gameboy->cgb_mode)
+        {
+            bcps = value;
+        }
+        
+        else if(addr == IO_OBPI && gameboy->cgb_mode)
+        {
+            ocps = value;
+        }
+
+        else if(addr == IO_BGPD && gameboy->cgb_mode)
+        {
+            uint8_t idx = bcps & 0x3F;
+            bg_palette_ram[idx] = value;
+            int colour =  idx >> 1;
+            uint16_t rgb555 = bg_palette_ram[colour * 2] | (bg_palette_ram[colour * 2 + 1] << 8);
+            gameboy->ppu.update_palette_color(false, colour, rgb555);
+            if (bcps & 0x80) bcps = 0x80 | ((idx + 1) & 0x3F);
+        }
+
+        else if(addr == IO_OBPD && gameboy->cgb_mode)
+        {
+            uint8_t idx = ocps & 0x3F;
+            obj_palette_ram[idx] = value;
+            int colour =  idx >> 1;
+            uint16_t rgb555 = obj_palette_ram[colour * 2] | (obj_palette_ram[colour * 2 + 1] << 8);
+            gameboy->ppu.update_palette_color(true, colour, rgb555);
+            if (ocps & 0x80) ocps = 0x80 | ((idx + 1) & 0x3F);
+        }
         else
         {
             io[addr - ADDR_IO_START] = value;

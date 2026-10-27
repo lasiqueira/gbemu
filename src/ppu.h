@@ -134,10 +134,12 @@ struct PPU
     
     // RGBA buffer for the current frame (160x144 pixels)
     std::array<uint32_t, SCREEN_WIDTH * SCREEN_HEIGHT> rgba_buffer = {};
-
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
-
     std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
+
+    std::array<uint32_t, 32> bg_palette_rgba = {};   // 8 palettes x 4 colours
+    std::array<uint32_t, 32> obj_palette_rgba = {};
+    bool color_correction = true;
 
     PPUMode mode = PPUMode::OAMSearch;
     uint8_t scanline = 0;            // Current scanline (0-153)
@@ -168,6 +170,10 @@ struct PPU
 
     TileBytes fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory);
     TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
+
+    uint32_t cgb_color_to_rgba(uint16_t rgb555) const;
+    void update_palette_color(bool obj, int colour, uint16_t rgb555);  // colour = 0..31
+    void rebuild_palette_cache(const Memory& memory);                  // all 64 entries   
 };
 
 // oam corruption helpers

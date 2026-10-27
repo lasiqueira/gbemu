@@ -35,6 +35,10 @@ constexpr uint16_t IO_SVBK   = 0xFF70; // WRAM Bank
 constexpr uint16_t IO_HDMA5  = 0xFF55; // HDMA5
 constexpr uint16_t IO_OPRI   = 0xFF6C; // CGB (OAM-order) object priority
 constexpr uint16_t IO_KEY1   = 0xFF4D; // CGB Speed Switch
+constexpr uint16_t IO_BGPI   = 0xFF68; // BG Palette Index
+constexpr uint16_t IO_BGPD   = 0xFF69; // BG Palette Data
+constexpr uint16_t IO_OBPI   = 0xFF6A; // OBJ Palette Index
+constexpr uint16_t IO_OBPD   = 0xFF6B; // OBJ Palette Data
 
 // Memory map region boundaries
 constexpr uint16_t ADDR_ROM_BANK0_END  = 0x4000; // End of fixed ROM bank 0
