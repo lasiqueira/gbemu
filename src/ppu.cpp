@@ -209,10 +209,14 @@ void PPU::render_scanline(Memory& memory)
             cached_was_window = draw_window;
         }
 
-        int bit_pos = 7 - (pixel_x % 8);
+        int bit_pos = (cached_tile_bytes.attr & 0x20) ? (pixel_x % 8) : 7 - (pixel_x % 8);
         uint8_t bg_color_id = ((cached_tile_bytes.byte2 >> bit_pos) & 1) << 1 | ((cached_tile_bytes.byte1 >> bit_pos) & 1);
-        bool bg_attr_priority = false;
+        bool bg_attr_priority = cached_tile_bytes.attr & 0x80;
         uint8_t bg_color = (bgp >> (bg_color_id * 2)) & 0x03;
+        
+        uint32_t bg_rgba = cgb_mode
+        ? bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id]
+        : GB_PALETTE_RGBA32[bg_color];
 
         int sprite_color = -1;
         uint8_t sprite_priority = 0;
@@ -224,32 +228,23 @@ void PPU::render_scanline(Memory& memory)
             sprite_line[x].present = false; // Reset for next scanline
         }
 
-        uint8_t final_color;
+        uint32_t final_rgba;
         if(sprite_color == -1)
         {
-            final_color = bg_color;
+            final_rgba = bg_rgba;
         }
         else if(sprite_priority & SPRITE_PRIORITY)
         {
             // Sprite behind BG, but BG color 0 is transparent
-            if(bg_color_id == 0)
-            {
-                // BG color 0 is transparent, so sprite is visible
-                final_color = sprite_color;
-            }
-            else
-            {
-                // BG color 1-3 are opaque, so sprite is behind BG
-                final_color = bg_color;
-            }
+            final_rgba = bg_color_id == 0 ? GB_PALETTE_RGBA32[sprite_color] : bg_rgba; 
         }
         else 
         {
             // Sprite above BG
-            final_color = sprite_color; 
+            final_rgba = GB_PALETTE_RGBA32[sprite_color];
         }      
 
-        rgba_buffer[scanline * SCREEN_WIDTH + x] = GB_PALETTE_RGBA32[final_color];
+        rgba_buffer[scanline * SCREEN_WIDTH + x] = final_rgba;
     }
 
     if(window_rendered_this_line)
@@ -367,7 +362,8 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     uint8_t tile_y = pixel_y / 8;
     uint8_t tile_x = pixel_x / 8;
     uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
-    
+    uint8_t attr = cgb_mode ? memory.read_vram_bank(tile_map_addr, 1) : 0;
+    uint8_t bank = (attr >> 3) & 1;
     uint8_t tile_id = memory.read_vram(tile_map_addr);
     
     // Get tile data address
@@ -384,12 +380,18 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     
     // Get pixel within tile
     uint8_t tile_pixel_y = pixel_y % 8;
+    if (attr & 0x40)
+    {
+        tile_pixel_y = 7 - tile_pixel_y; // Flip Y within the tile
+    }
     
     // Each tile row is 2 bytes
     uint16_t tile_row_addr = tile_addr + tile_pixel_y * 2;
     TileBytes row_bytes;
-    row_bytes.byte1 = memory.read_vram(tile_row_addr);
-    row_bytes.byte2 = memory.read_vram(tile_row_addr + 1);
+    row_bytes.byte1 = memory.read_vram_bank(tile_row_addr, bank);
+    row_bytes.byte2 = memory.read_vram_bank(tile_row_addr + 1, bank);
+
+    row_bytes.attr = attr;
     
     return row_bytes;
 }

@@ -119,6 +119,7 @@ struct TileBytes
 {
     uint8_t byte1;
     uint8_t byte2;
+    uint8_t attr = 0;   // CGB BG attribute; 0 on DMG
 };
 
 struct SpritePixel
@@ -148,6 +149,7 @@ struct PPU
     bool frame_ready = false;    // True when a frame is complete and ready to display
     bool lcd_off = false;          // True if LCD is disabled (LCDC bit 7 is 0)
     uint16_t mode_cycles = 0;         // Cycles spent in current mode
+    bool cgb_mode = false;
     
     // Update PPU state for the given number of cycles
     void step(int cycles, Memory& memory);

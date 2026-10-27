@@ -165,6 +165,7 @@ void GameBoy::set_cartridge_mode()
     bool cart_is_cgb = (memory.cgb_flag == 0x80 || memory.cgb_flag == 0xC0);
     model = model_is_auto ? (cart_is_cgb ? Model::CGB : Model::DMG) : requested_model;
     cgb_mode = (model == Model::CGB);
+    ppu.cgb_mode = cgb_mode;
     dmg_compat = (cgb_mode && !cart_is_cgb);
 }
 
