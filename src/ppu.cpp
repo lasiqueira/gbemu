@@ -223,14 +223,23 @@ void PPU::render_scanline(Memory& memory)
         uint8_t bg_color = (bgp >> (bg_color_id * 2)) & 0x03;
         
         uint32_t bg_rgba;
-        if (!cgb_mode)        bg_rgba = GB_PALETTE_RGBA32[bg_color];
-        else if (dmg_compat)  bg_rgba = bg_palette_rgba[bg_color]; // BGP picks within BG palette 0
-        else                  bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id];
+        if (!cgb_mode)
+        {
+            bg_rgba = GB_PALETTE_RGBA32[bg_color];
+        }
+        else if (dmg_compat)
+        {
+            bg_rgba = bg_palette_rgba[bg_color]; // BGP picks within BG palette 0
+        }
+        else
+        {
+            bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id];
+        }
         
         bool     sprite_present = sprite_line[x].present;
-        uint32_t sprite_rgba    = sprite_line[x].rgba;
-        uint8_t  sprite_attr    = sprite_line[x].attributes;
-        sprite_line[x].present  = false;   // reset for the next scanline
+        uint32_t sprite_rgba = sprite_line[x].rgba;
+        uint8_t  sprite_attr = sprite_line[x].attributes;
+        sprite_line[x].present = false; // reset for the next scanline
 
         uint32_t final_rgba;
         if (!sprite_present)
