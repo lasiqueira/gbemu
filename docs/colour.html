@@ -21,7 +21,7 @@
     <main>
         <article class="content">
         <h2>Game Boy Color</h2>
-        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–1: model plumbing and banked memory (in progress)</em></p>
+        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–2: model plumbing, banked memory and colour rendering (in progress)</em></p>
 
         <section>
             <h2>Design Decision — DMG Stays, Model Is Chosen at Boot</h2>
@@ -286,6 +286,249 @@ return read_vram_bank(addr, vram_bank);</code></pre>
         </section>
 
         <section>
+            <h2>Phase 2 — Colour Rendering</h2>
+            <p>
+                Phase 2 turns the PPU from a 2-bit-shade renderer into one that can produce CGB colour. It is five
+                steps that have to land in order: a renderer refactor with no visible change, palette RAM, background
+                attributes, sprite attributes, and finally the CGB rule for which of the two wins when a sprite and a
+                background pixel overlap. Every step keeps the DMG path byte-for-byte identical.
+            </p>
+            <p>
+                Throughout, <em>native CGB</em> means <code>cgb_mode &amp;&amp; !dmg_compat</code>. A DMG cartridge on
+                CGB hardware (<code>dmg_compat</code>) has no attribute bytes and no per-sprite palette bits, so it
+                keeps the DMG rules and only swaps the shade table for a palette in CRAM. The PPU holds its own copies
+                of <code>cgb_mode</code> and <code>dmg_compat</code>, set by <code>set_cartridge_mode()</code>, so it
+                needs no dependency on <code>GameBoy</code>.
+            </p>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/Palettes.html" target="_blank">Pandocs — Palettes</a>, <a href="https://gbdev.io/pandocs/Tile_Maps.html" target="_blank">Tile Maps</a>, <a href="https://gbdev.io/pandocs/OAM.html" target="_blank">OAM</a></em></p>
+
+            <h3>A Per-Pixel RGBA Renderer</h3>
+            <p>
+                <code>render_scanline()</code> used to write a post-BGP palette index (0–3) into a
+                <code>framebuffer</code>, and <code>update_rgba_buffer()</code> expanded the whole frame through
+                <code>GB_PALETTE_RGBA32[]</code> at VBlank. That is a dead end for CGB: its pixels come from a 32768
+                colour space, so there is no 2-bit index to store. The renderer now writes a packed
+                <code>uint32_t</code> straight into <code>rgba_buffer</code> for every pixel, and
+                <code>framebuffer</code> and <code>update_rgba_buffer()</code> are gone (which also removes a
+                23,040-iteration pass per frame). Three places write pixels: the LCD-off fill, the BG-disabled line,
+                and the main per-pixel write.
+            </p>
+            <h4>A Latent DMG Bug</h4>
+            <p>
+                While doing this, the sprite-behind-background test turned out to compare the wrong value. A sprite with
+                the priority bit set shows through only where the background's <em>raw colour ID</em> is 0, but the code
+                tested the shade that BGP maps that ID to. The two coincide for the usual <code>BGP = $E4</code>, which
+                is why it never showed. A game that remaps BGP — a fade to white (<code>$00</code>) or an inverted
+                screen — would have put every priority sprite in front of the whole background. The fix is to keep the
+                raw ID in a local and test that. CGB priority needs the raw ID as well, so this was a prerequisite:
+            </p>
+            <pre><code>uint8_t bg_color_id = ((byte2 &gt;&gt; bit_pos) &amp; 1) &lt;&lt; 1 | ((byte1 &gt;&gt; bit_pos) &amp; 1); // raw, pre-palette
+bool    bg_attr_priority = cached_tile_bytes.attr &amp; 0x80;                                    // CGB only
+uint8_t bg_color = (bgp &gt;&gt; (bg_color_id * 2)) &amp; 0x03;                                      // DMG shade</code></pre>
+            <p>
+                Background and sprite resolution happen in the same per-pixel loop, so locals are enough; no extra
+                line buffer is needed.
+            </p>
+
+            <h3>CGB Palette RAM</h3>
+            <p>
+                Colour palette RAM (CRAM) is two independent 64-byte banks: 8 palettes × 4 colours × 2 bytes, one for the
+                background and one for objects. It is not in the address space; each bank is reached through an index
+                register and a data register:
+            </p>
+            <table>
+                <tr><th>Register</th><th>Address</th><th>Role</th></tr>
+                <tr><td>BGPI</td><td><code>$FF68</code></td><td>BG index: bits 0–5 byte address, bit 7 auto-increment</td></tr>
+                <tr><td>BGPD</td><td><code>$FF69</code></td><td>BG data: the byte at the current index</td></tr>
+                <tr><td>OBPI</td><td><code>$FF6A</code></td><td>OBJ index</td></tr>
+                <tr><td>OBPD</td><td><code>$FF6B</code></td><td>OBJ data</td></tr>
+            </table>
+            <p>Three rules are easy to get wrong:</p>
+            <ul>
+                <li>Reads of the data register never auto-increment; only writes do.</li>
+                <li>The index wraps from 63 back to 0 rather than saturating.</li>
+                <li>On hardware the increment still happens when a write is ignored during mode 3. The mode-3 lock is
+                    not emulated yet, so every write lands.</li>
+            </ul>
+            <p>
+                The index registers read back with bit 6 set (<code>value | $40</code>). All four branches are gated
+                on <code>cgb_mode</code>; on DMG they fall through to the generic register file.
+            </p>
+
+            <h4>Colour Format and Correction</h4>
+            <p>
+                A colour is RGB555, little-endian, low byte first; bit 15 is ignored. Expanding with a plain
+                <code>x &lt;&lt; 3</code> looks wrong on a modern display, because the CGB panel is unlit (maximum
+                intensity is light grey), non-linear, and its pigments bleed into each other. The default is the usual
+                correction curve:
+            </p>
+            <pre><code>uint8_t r = (r5 * 13 + g5 *  2 + b5     ) &gt;&gt; 1;
+uint8_t g = (g5 *  3 + b5              ) &lt;&lt; 1;
+uint8_t b = (r5 *  3 + g5 *  2 + b5 * 11) &gt;&gt; 1;   // 31,31,31 -&gt; 248,248,248</code></pre>
+            <p><code>color_correction</code> selects the raw <code>x &lt;&lt; 3</code> expansion instead.</p>
+
+            <h4>Who Owns What</h4>
+            <p>
+                The storage is split by what each side is responsible for. <code>Memory</code> owns the CRAM bytes,
+                the index registers and the bus decoding. The <code>PPU</code> owns everything video-related:
+                <code>bg_palette_rgba[32]</code> and <code>obj_palette_rgba[32]</code> (the converted colours),
+                <code>color_correction</code>, and the conversion itself. Running the arithmetic per pixel would be
+                wasteful, so a data write recomputes only the one affected entry, and rendering is a single array lookup,
+                the same cost as the DMG path:
+            </p>
+            <pre><code>// Memory::write, BGPD
+uint8_t idx    = bcps &amp; 0x3F;
+bg_palette_ram[idx] = value;
+int colour     = idx &gt;&gt; 1;
+uint16_t rgb555 = bg_palette_ram[colour * 2] | (bg_palette_ram[colour * 2 + 1] &lt;&lt; 8);
+gameboy-&gt;ppu.update_palette_color(false, colour, rgb555);
+if (bcps &amp; 0x80) bcps = 0x80 | ((idx + 1) &amp; 0x3F);</code></pre>
+            <p>
+                Two details matter here. The colour is rebuilt from <em>both</em> bytes of its pair: an early version
+                read the high byte as <code>ram[idx | 1]</code>, which for an odd index is the same byte as
+                <code>ram[idx]</code>, so every second write produced a wrong colour. And the cache has to be filled once
+                at post-boot: BG CRAM starts as all <code>$FF</code> (white), but the cache starts zeroed, so
+                <code>apply_post_boot_state()</code> calls <code>ppu.rebuild_palette_cache(memory)</code> after the
+                fill, otherwise a CGB game shows black until it programs every palette.
+            </p>
+
+            <h3>Background and Window Attributes</h3>
+            <p>
+                In CGB mode every tile-map entry has an attribute byte at the <em>same address in VRAM bank 1</em>. The
+                attribute at <code>1:9800</code> describes the tile named at <code>0:9800</code>, so the same tile
+                graphic used twice can have two palettes.
+            </p>
+            <table>
+                <tr><th>Bit</th><th>Meaning</th></tr>
+                <tr><td>7</td><td>BG-to-OBJ priority: colour IDs 1–3 draw over objects</td></tr>
+                <tr><td>6</td><td>Y flip</td></tr>
+                <tr><td>5</td><td>X flip</td></tr>
+                <tr><td>4</td><td>unused</td></tr>
+                <tr><td>3</td><td>tile data VRAM bank</td></tr>
+                <tr><td>2–0</td><td>BG palette 0–7</td></tr>
+            </table>
+            <p>
+                <code>TileBytes</code> gained an <code>attr</code> field, and <code>fetch_tile_row()</code> fills it.
+                Because the attribute lives inside the struct the per-line tile cache already holds, it is cached
+                together with the tile bytes for free; keeping it separately is how you get the classic bug of correct
+                pixels with the previous tile's palette. The tile index always comes from bank 0, the attribute from bank
+                1, and the tile row from whichever bank the attribute selects:
+            </p>
+            <pre><code>uint8_t attr = (cgb_mode &amp;&amp; !dmg_compat) ? memory.read_vram_bank(tile_map_addr, 1) : 0;
+uint8_t bank = (attr &gt;&gt; 3) &amp; 1;
+if (attr &amp; 0x40) tile_pixel_y = 7 - tile_pixel_y;           // Y flip
+row_bytes.byte1 = memory.read_vram_bank(tile_row_addr,     bank);
+row_bytes.byte2 = memory.read_vram_bank(tile_row_addr + 1, bank);
+row_bytes.attr  = attr;</code></pre>
+            <p>
+                X flip is applied at pixel extraction by inverting the bit position. Flips are per tile, so a flipped
+                tile mirrors within its own eight pixels.
+            </p>
+            <h4>Colour Lookup</h4>
+            <pre><code>if (!cgb_mode)       bg_rgba = GB_PALETTE_RGBA32[bg_color];                 // DMG: shade via BGP
+else if (dmg_compat) bg_rgba = bg_palette_rgba[bg_color];                   // BGP picks within palette 0
+else                 bg_rgba = bg_palette_rgba[((attr &amp; 0x07) &lt;&lt; 2) | bg_color_id];</code></pre>
+            <p>
+                The middle branch exists because a DMG game on CGB has <code>attr == 0</code>. The native formula would
+                then index by raw colour ID and ignore BGP, so fades and inverted screens would render wrongly. On real
+                hardware, BGP, OBP0 and OBP1 index into CRAM in this mode.
+            </p>
+
+            <h3>Object Attributes and Priority Mode</h3>
+            <p>The OAM attribute byte is reinterpreted on native CGB:</p>
+            <table>
+                <tr><th>Bit</th><th>DMG / compat</th><th>Native CGB</th></tr>
+                <tr><td>7</td><td>priority</td><td>priority</td></tr>
+                <tr><td>6</td><td>Y flip</td><td>Y flip</td></tr>
+                <tr><td>5</td><td>X flip</td><td>X flip</td></tr>
+                <tr><td>4</td><td>OBP0 / OBP1</td><td>ignored</td></tr>
+                <tr><td>3</td><td>—</td><td>tile data VRAM bank</td></tr>
+                <tr><td>2–0</td><td>—</td><td>OBJ palette 0–7</td></tr>
+            </table>
+            <p>
+                DMG games leave bits 3 and 2–0 as junk, so they are honoured only on native CGB.
+                <code>fetch_sprite_row()</code> picks its VRAM bank from bit 3 under the same gate; the bank applies to
+                both tiles of an 8×16 sprite.
+            </p>
+            <h4>The Sprite Line Buffer Carries Finished Colour</h4>
+            <p>
+                <code>sprite_line</code> used to hold a post-OBP shade, which cannot represent a CGB colour. A
+                <code>SpritePixel</code> now holds the resolved RGBA and the whole attribute byte, and the sprite loop
+                resolves the colour where the raw colour ID is known:
+            </p>
+            <pre><code>struct SpritePixel { uint32_t rgba; uint8_t attributes; bool present = false; };
+
+uint32_t rgba;
+if (!cgb_mode)
+    rgba = GB_PALETTE_RGBA32[(palette &gt;&gt; (color_id * 2)) &amp; 3];
+else if (dmg_compat)   // OBP picks the shade; OAM bit 4 picks OBJ palette 0 or 1
+    rgba = obj_palette_rgba[((attr &amp; SPRITE_PALETTE) ? 4 : 0) + ((palette &gt;&gt; (color_id * 2)) &amp; 3)];
+else
+    rgba = obj_palette_rgba[((attr &amp; 0x07) &lt;&lt; 2) | color_id];
+sprite_line[px] = { rgba, sprite.attributes, true };</code></pre>
+            <p>
+                The raw colour ID is not stored: a pixel is only written when it is non-zero, so "the object's colour
+                ID is 0" is already handled by skipping it. The per-pixel resolve then reads
+                <code>present</code>, <code>rgba</code> and <code>attributes</code> directly.
+            </p>
+            <h4>OPRI: Who Wins Between Two Sprites</h4>
+            <p>
+                DMG orders overlapping sprites by X coordinate, then OAM index. CGB orders purely by OAM position.
+                <code>OPRI</code> (<code>$FF6C</code>) bit 0 selects the rule: 0 is CGB order, 1 is DMG order.
+                <code>scan_oam()</code> already collects sprites in ascending OAM index, so CGB ordering is simply skipping
+                the sort. The 10-sprites-per-line limit and the first-writer-wins rule are unaffected:
+            </p>
+            <pre><code>bool dmg_priority = !cgb_mode || (memory.read_io_raw(IO_OPRI) &amp; 1);
+if (dmg_priority) std::sort(...);</code></pre>
+            <p>
+                The CGB boot ROM sets <code>OPRI</code> to 1 for DMG cartridges, so
+                <code>apply_post_boot_state()</code> now writes <code>dmg_compat ? 1 : 0</code> instead of a constant
+                0. Without that, a DMG game forced onto CGB would get OAM-order priority.
+            </p>
+
+            <h3>Background-to-Object Priority</h3>
+            <p>
+                On DMG, LCDC bit 0 enables the background and window; clearing it blanks them. On CGB it becomes a
+                master priority flag: the background is still drawn but loses all priority, and objects always win. The
+                "blank the line" early-out in <code>render_scanline()</code> therefore applies only to DMG and compat
+                mode. In native CGB the winner is decided by an ordered set of tests:
+            </p>
+            <ol>
+                <li>If the object's colour ID is 0, the background wins (already handled: such pixels are never stored).</li>
+                <li>Else if LCDC bit 0 is clear, the object wins.</li>
+                <li>Else if both the BG attribute's bit 7 and the OAM attribute's bit 7 are clear, the object wins.</li>
+                <li>Else the background wins if its colour ID is 1–3; otherwise the object wins.</li>
+            </ol>
+            <pre><code>if (cgb_mode &amp;&amp; !dmg_compat) {
+    if (!sprite_present)                                         final_rgba = bg_rgba;
+    else if (!(lcdc &amp; LCDC_BG_ENABLE))                           final_rgba = sprite_rgba;
+    else if (!bg_attr_priority &amp;&amp; !(sprite_attr &amp; SPRITE_PRIORITY)) final_rgba = sprite_rgba;
+    else                                                         final_rgba = (bg_color_id == 0) ? sprite_rgba : bg_rgba;
+}</code></pre>
+            <p>
+                Two sign traps: the OAM bit grants object priority when it is <em>clear</em>, not set; and the BG
+                attribute bit wins even when the OAM bit says the object should be in front. The original DMG block is
+                untouched behind the <code>else</code>.
+            </p>
+
+            <h3>Verification</h3>
+            <p>
+                DMG regression unchanged, run with <code>--model=dmg</code>: <code>cpu_instrs</code>,
+                <code>instr_timing</code>, <code>mem_timing</code> and <code>mem_timing-2</code> pass,
+                <code>oam_bug</code> is 8/8, and <code>dmg_sound</code> is still 11/12 (test 10 is a known open
+                failure). Tetris was checked by eye in DMG mode after the sprite changes.
+            </p>
+            <p>
+                Those suites only exercise the DMG path, so they say nothing about the CGB branches. Those have not yet
+                been checked against a CGB ROM; <a href="https://github.com/mattcurrie/cgb-acid2" target="_blank">cgb-acid2</a>
+                covers attributes, palettes, sprite ordering and priority in a single image, and
+                <a href="https://github.com/alloncm/MagenTests" target="_blank">MagenTests</a> has a ROM for the priority
+                table. A DMG cartridge forced onto CGB shows a blank white screen for now, because BG CRAM starts all
+                white and nothing installs a compatibility palette yet.
+            </p>
+        </section>
+
+        <section>
             <h2>Status</h2>
             <ul>
                 <li>✓ CGB flag parsed from the cartridge header</li>
@@ -295,7 +538,12 @@ return read_vram_bank(addr, vram_bank);</code></pre>
                 <li>✓ BG palette RAM storage added and initialised to white</li>
                 <li>✓ VRAM banking (<code>VBK</code>) with a bank-0 PPU accessor</li>
                 <li>✓ WRAM banking (<code>SVBK</code>) behind a single <code>wram_offset()</code> helper</li>
-                <li>⏳ Palette registers, tile attributes, double speed, HDMA — later phases</li>
+                <li>✓ Per-pixel RGBA renderer; sprite-priority test fixed to use the raw colour ID</li>
+                <li>✓ CGB palette RAM registers (<code>BGPI</code>/<code>BGPD</code>/<code>OBPI</code>/<code>OBPD</code>) with auto-increment, colour conversion and a PPU-owned RGBA cache</li>
+                <li>✓ BG/window tile attributes: palette, tile bank, X/Y flip</li>
+                <li>✓ OBJ attributes and <code>OPRI</code> priority mode</li>
+                <li>✓ CGB BG-to-OBJ priority resolution</li>
+                <li>⏳ Double speed, HDMA, DMG-on-CGB compatibility palettes, DMG-quirk gating — later phases</li>
             </ul>
         </section>
 
