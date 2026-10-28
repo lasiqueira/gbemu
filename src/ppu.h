@@ -124,8 +124,8 @@ struct TileBytes
 
 struct SpritePixel
 {
-    uint8_t color;
-    uint8_t priority;
+    uint32_t rgba;
+    uint8_t attributes;
     bool present = false;
 
 };

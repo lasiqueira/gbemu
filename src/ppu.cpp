@@ -184,7 +184,15 @@ void PPU::render_scanline(Memory& memory)
             int bit_pos = 7 - pixel_x;
             uint8_t color_id = ((row.byte2 >> bit_pos) & 1) << 1 | ((row.byte1 >> bit_pos) & 1);
             if (color_id == 0) continue;
-            sprite_line[px] = { (uint8_t)((palette >> (color_id * 2)) & 0x03), sprite.attributes, true };
+            
+            uint32_t rgba;
+            if (!cgb_mode)
+                rgba = GB_PALETTE_RGBA32[(palette >> (color_id * 2)) & 3];
+            else if (dmg_compat)
+                rgba = obj_palette_rgba[((sprite.attributes & SPRITE_PALETTE) ? 4 : 0) + ((palette >> (color_id * 2)) & 3)];
+            else
+                rgba = obj_palette_rgba[((sprite.attributes & 0x07) << 2) | color_id];
+            sprite_line[px] = { rgba, sprite.attributes, true };
         }
     }
 
@@ -218,32 +226,25 @@ void PPU::render_scanline(Memory& memory)
         if (!cgb_mode)        bg_rgba = GB_PALETTE_RGBA32[bg_color];
         else if (dmg_compat)  bg_rgba = bg_palette_rgba[bg_color]; // BGP picks within BG palette 0
         else                  bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id];
-
-        int sprite_color = -1;
-        uint8_t sprite_priority = 0;
         
-        if (sprite_line[x].present)
-        {
-            sprite_color = sprite_line[x].color;
-            sprite_priority = sprite_line[x].priority;
-            sprite_line[x].present = false; // Reset for next scanline
-        }
+        bool     sprite_present = sprite_line[x].present;
+        uint32_t sprite_rgba    = sprite_line[x].rgba;
+        uint8_t  sprite_attr    = sprite_line[x].attributes;
+        sprite_line[x].present  = false;   // reset for the next scanline
 
         uint32_t final_rgba;
-        if(sprite_color == -1)
+        if (!sprite_present)
         {
             final_rgba = bg_rgba;
         }
-        else if(sprite_priority & SPRITE_PRIORITY)
+        else if (sprite_attr & SPRITE_PRIORITY)
         {
-            // Sprite behind BG, but BG color 0 is transparent
-            final_rgba = bg_color_id == 0 ? GB_PALETTE_RGBA32[sprite_color] : bg_rgba; 
+            final_rgba = bg_color_id == 0 ? sprite_rgba : bg_rgba;
         }
-        else 
+        else
         {
-            // Sprite above BG
-            final_rgba = GB_PALETTE_RGBA32[sprite_color];
-        }      
+            final_rgba = sprite_rgba;
+        }
 
         rgba_buffer[scanline * SCREEN_WIDTH + x] = final_rgba;
     }
@@ -334,15 +335,21 @@ void PPU::scan_oam(Memory& memory)
     }
 
     // DMG priority: lower X wins; ties broken by lower OAM index (already in order)
-    std::sort(visible_sprites.begin(), visible_sprites.begin() + visible_sprite_count,
-        [](const Sprite& a, const Sprite& b) {
-            if(a.x != b.x) return a.x < b.x;
-            return a.oam_index < b.oam_index;
-        });
+    bool dmg_priority = !cgb_mode || (memory.read_io_raw(IO_OPRI) & 1);
+    if(dmg_priority)
+    {
+        std::sort(visible_sprites.begin(), visible_sprites.begin() + visible_sprite_count,
+            [](const Sprite& a, const Sprite& b) {
+                if(a.x != b.x) return a.x < b.x;
+                return a.oam_index < b.oam_index;
+            });
+    }
+    
 }
 
 TileBytes PPU::fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory)
 {
+    uint8_t bank = (cgb_mode && !dmg_compat) ? (sprite.attributes >> 3) & 1 : 0;
     int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET);
     if (sprite.attributes & SPRITE_FLIP_Y)
         pixel_y = (sprite_height - 1) - pixel_y;
@@ -355,7 +362,7 @@ TileBytes PPU::fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory&
     }
 
     uint16_t tile_row_addr = ADDR_VRAM_START + tile_index * BYTES_PER_TILE + pixel_y * 2;
-    return { memory.read_vram(tile_row_addr), memory.read_vram(tile_row_addr + 1) };
+    return { memory.read_vram_bank(tile_row_addr, bank), memory.read_vram_bank(tile_row_addr + 1, bank) };
 }
 
 TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory)

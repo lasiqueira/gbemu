@@ -197,7 +197,7 @@ void GameBoy::apply_post_boot_state()
         memory.write_io_raw(IO_SVBK, 0xF8); // WRAM bank 1
         memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
         memory.write_io_raw(IO_HDMA5, 0xFF); // No transfer active
-        memory.write_io_raw(IO_OPRI, 0x00); // CGB (OAM-order) object priority
+        memory.write_io_raw(IO_OPRI, dmg_compat ? 0x01 : 0x00); // CGB (OAM-order) object priority
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
         ppu.rebuild_palette_cache(memory);
     }
