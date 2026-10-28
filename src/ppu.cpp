@@ -136,7 +136,7 @@ void PPU::render_scanline(Memory& memory)
     bool background_enabled = lcdc & LCDC_BG_ENABLE;
     bool window_enabled = lcdc & LCDC_WINDOW_ENABLE;
     // If BG is disabled, render white line
-    if (!background_enabled)
+    if (!background_enabled && !(cgb_mode && !dmg_compat))
     {
         for (int x = 0; x < SCREEN_WIDTH; x++)
         {
@@ -242,18 +242,42 @@ void PPU::render_scanline(Memory& memory)
         sprite_line[x].present = false; // reset for the next scanline
 
         uint32_t final_rgba;
-        if (!sprite_present)
+        if(cgb_mode && !dmg_compat)
         {
-            final_rgba = bg_rgba;
-        }
-        else if (sprite_attr & SPRITE_PRIORITY)
-        {
-            final_rgba = bg_color_id == 0 ? sprite_rgba : bg_rgba;
+            if (!sprite_present)
+            {
+                final_rgba = bg_rgba;
+            }
+            else if (!(lcdc & LCDC_BG_ENABLE))
+            {
+                final_rgba = sprite_rgba;
+            }
+            else if (!bg_attr_priority && !(sprite_attr & SPRITE_PRIORITY))
+            {
+                final_rgba = sprite_rgba;
+            }
+            else
+            {
+                final_rgba = (bg_color_id == 0) ? sprite_rgba : bg_rgba;
+            }
+                
         }
         else
         {
-            final_rgba = sprite_rgba;
+            if (!sprite_present)
+            {
+                final_rgba = bg_rgba;
+            }
+            else if (sprite_attr & SPRITE_PRIORITY)
+            {
+                final_rgba = bg_color_id == 0 ? sprite_rgba : bg_rgba;
+            }
+            else
+            {
+                final_rgba = sprite_rgba;
+            }
         }
+        
 
         rgba_buffer[scanline * SCREEN_WIDTH + x] = final_rgba;
     }
