@@ -164,6 +164,9 @@ struct PPU
     // Request interrupt
     void request_interrupt(Memory& memory, uint8_t interrupt_bit);
 
+    // Update the STAT LYC=LY flag for the current scanline and raise the STAT interrupt if enabled
+    void check_lyc(Memory& memory);
+
     // Scan OAM for sprites visible on the current scanline and populate visible_sprites array
     void scan_oam(Memory& memory);
 

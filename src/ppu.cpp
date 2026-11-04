@@ -60,23 +60,7 @@ void PPU::step(int cycles, Memory& memory)
                 mode_cycles -= MODE_0_CYCLES;
                 scanline++;
                 memory.write_io_raw(IO_LY, scanline);
-                
-                // Check IO_LYC=IO_LY coincidence
-                uint8_t lyc = memory.read_io_raw(IO_LYC);
-                uint8_t stat = memory.read_io_raw(IO_STAT);
-                if (scanline == lyc)
-                {
-                    stat |= STAT_LYC_FLAG;
-                    if (stat & STAT_LYC_INT)
-                    {
-                        request_interrupt(memory, INT_LCD_STAT);
-                    }
-                }
-                else
-                {
-                    stat &= ~STAT_LYC_FLAG;
-                }
-                memory.write_io_raw(IO_STAT, stat);
+                check_lyc(memory);
                 
                 if (scanline >= SCREEN_HEIGHT)
                 {
@@ -97,33 +81,15 @@ void PPU::step(int cycles, Memory& memory)
             {
                 mode_cycles -= SCANLINE_CYCLES;
                 scanline++;
-                memory.write_io_raw(IO_LY, scanline);
-                
-                // Check IO_LYC=IO_LY coincidence
-                uint8_t lyc = memory.read_io_raw(IO_LYC);
-                uint8_t stat = memory.read_io_raw(IO_STAT);
-                if (scanline == lyc)
-                {
-                    stat |= STAT_LYC_FLAG;
-                    if (stat & STAT_LYC_INT)
-                    {
-                        request_interrupt(memory, INT_LCD_STAT);
-                    }
-                }
-                else
-                {
-                    stat &= ~STAT_LYC_FLAG;
-                }
-                memory.write_io_raw(IO_STAT, stat);
-                
                 if (scanline >= SCANLINES_PER_FRAME)
                 {
                     // Start new frame
                     scanline = 0;
                     window_line_counter = 0;
-                    memory.write_io_raw(IO_LY, scanline);
                     set_mode(PPUMode::OAMSearch, memory);
                 }
+                memory.write_io_raw(IO_LY, scanline);
+                check_lyc(memory);
             }
             break;
     }
@@ -324,6 +290,25 @@ void PPU::request_interrupt(Memory& memory, uint8_t interrupt_bit)
     uint8_t if_reg = memory.read_io_raw(IO_IF);
     if_reg |= interrupt_bit;
     memory.write_io_raw(IO_IF, if_reg);
+}
+
+void PPU::check_lyc(Memory& memory)
+{
+    uint8_t lyc = memory.read_io_raw(IO_LYC);
+    uint8_t stat = memory.read_io_raw(IO_STAT);
+    if (scanline == lyc)
+    {
+        stat |= STAT_LYC_FLAG;
+        if (stat & STAT_LYC_INT)
+        {
+            request_interrupt(memory, INT_LCD_STAT);
+        }
+    }
+    else
+    {
+        stat &= ~STAT_LYC_FLAG;
+    }
+    memory.write_io_raw(IO_STAT, stat);
 }
 
 void PPU::scan_oam(Memory& memory)
