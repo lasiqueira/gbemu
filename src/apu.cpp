@@ -3,14 +3,14 @@
 #include "constants.h"
 
 
-void APU::step(int cycles, Memory& memory)
+void APU::step(int sys, int cycles, Memory& memory)
 {
-    channel1.step(cycles);
-    channel2.step(cycles);
-    channel3.step(cycles);
-    channel4.step(cycles);
+    channel1.step(sys);
+    channel2.step(sys);
+    channel3.step(sys);
+    channel4.step(sys);
 
-    sample_counter += cycles * AUDIO_SAMPLE_RATE;
+    sample_counter += sys * AUDIO_SAMPLE_RATE;
     while (sample_counter >= static_cast<uint32_t>(CPU_FREQUENCY))
     {
         sample_counter -= CPU_FREQUENCY;
@@ -40,7 +40,9 @@ void APU::step(int cycles, Memory& memory)
 
     uint16_t div_before = memory.div_counter;
     uint16_t div_after = div_before + cycles;
-    if ((div_before & 0x1000) && !(div_after & 0x1000))
+    // DIV runs twice as fast in double speed, so watch one bit higher to keep the sequencer at 512 Hz
+    uint16_t mask = memory.double_speed ? 0x2000 : 0x1000;
+    if ((div_before & mask) && !(div_after & mask))
     {
         frame_seq_step();
     }

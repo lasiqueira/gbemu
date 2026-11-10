@@ -76,6 +76,17 @@ struct Memory {
     uint16_t div_counter = 0;  // Internal 16-bit divider counter; DIV register = upper byte
     uint16_t tima_cycles = 0;  // Cycle accumulator for TIMA increments
 
+    // Hardware model, set by GameBoy::set_cartridge_mode(); gates CGB-only registers
+    bool cgb_mode = false;
+    bool dmg_compat = false; // CGB hardware running a DMG cartridge
+
+    // CGB speed state (KEY1, $FF4D)
+    bool double_speed = false;
+    bool key1_armed = false;
+
+    // Convert CPU T-cycles at the current speed into real-time cycles (PPU/APU/RTC clock)
+    int to_real_time(int cpu_cycles) const { return double_speed ? cpu_cycles >> 1 : cpu_cycles; }
+
     // Advance timer counters by the given number of CPU cycles
     void tick_timers(int cycles);
     

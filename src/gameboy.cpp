@@ -62,8 +62,9 @@ int GameBoy::step_frame()
             // No CPU bus access happens while halted/stopped, so tick subsystems explicitly here
             if (!cpu.stopped)
             {
-                ppu.step(cycles, memory);
-                apu.step(cycles, memory);
+                int sys = memory.to_real_time(cycles);
+                ppu.step(sys, memory);
+                apu.step(sys, cycles, memory);
             }
             memory.tick_timers(cycles);
         }
@@ -78,7 +79,13 @@ int GameBoy::step_frame()
             running = false;
             return cycles; // Error occurred
         }
-        cycles_executed += cycles;
+        int real_cycles = memory.to_real_time(cycles); // real-time cycles so a frame stays 70224; taken before any speed switch
+        if (cpu.stop_executed)
+        {
+            cpu.stop_executed = false;
+            real_cycles += try_speed_switch();
+        }
+        cycles_executed += real_cycles;
     }
     return cycles_executed;
 }
@@ -154,10 +161,10 @@ void GameBoy::handle_interrupts()
 
 void GameBoy::on_memory_cycle(int cycles)
 {
-    ppu.step(cycles, memory);
-    apu.step(cycles, memory);
-    memory.tick_timers(cycles);
-
+    int sys = memory.to_real_time(cycles);
+    ppu.step(sys, memory);
+    apu.step(sys, cycles, memory);
+    memory.tick_timers(cycles); // DIV/TIMA: CPU clock,     don't halve
 }
 
 void GameBoy::set_cartridge_mode()
@@ -168,6 +175,8 @@ void GameBoy::set_cartridge_mode()
     ppu.cgb_mode = cgb_mode;
     dmg_compat = (cgb_mode && !cart_is_cgb);
     ppu.dmg_compat = dmg_compat;
+    memory.cgb_mode = cgb_mode;
+    memory.dmg_compat = dmg_compat;
 }
 
 void GameBoy::apply_post_boot_state()
@@ -201,4 +210,20 @@ void GameBoy::apply_post_boot_state()
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
         ppu.rebuild_palette_cache(memory);
     }
+}
+
+int GameBoy::try_speed_switch()
+{
+    if (!cgb_mode || dmg_compat || !memory.key1_armed) return 0;
+    memory.double_speed = !memory.double_speed;
+    memory.key1_armed = false;
+    memory.div_counter = 0;
+    memory.write_io_raw(IO_DIV, 0);
+    for (int i = 0; i < 2050; ++i) // ~8200 real-time T-cycles
+    {
+        ppu.step(4, memory);
+        apu.step(4, 0, memory); // cpu_cycles = 0: DIV is frozen
+    }
+
+    return 8200; // real-time cycles spent in the stall
 }

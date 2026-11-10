@@ -126,7 +126,7 @@ struct APU
     uint8_t wave_ram[16] = {};
 
     std::vector<int16_t> sample_buffer; // Output audio samples (16-bit signed)
-    void step(int cycles, Memory& memory);
+    void step(int sys, int cycles, Memory& memory);
     void on_register_write(uint16_t addr, uint8_t value);
     uint8_t on_register_read(uint16_t addr);
     void frame_seq_step();

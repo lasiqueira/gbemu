@@ -63,6 +63,7 @@ struct CPU
     bool stopped = false; // CPU stopped state
     bool halted = false; // CPU halted state
     bool halt_bug = false; // HALT bug state
+    bool stop_executed = false; // Set by STOP; GameBoy consumes it to perform a CGB speed switch
     
     CPU();
     

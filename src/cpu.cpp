@@ -906,8 +906,8 @@ int CPU::stop()
 {
     // On DMG, STOP halts the CPU until a button press, but no software
     // intentionally uses it except for CGB speed switching.
-    // stopped = true;
     pc += 2; // STOP is 2 bytes: 0x10 0x00
+    stop_executed = true;
     return 4;
 }
 

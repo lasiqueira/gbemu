@@ -21,6 +21,7 @@ struct GameBoy {
     bool dmg_compat = false; // CGB hardware running a DMG cartridge
 
     bool running = false;
+
     
     void reset();
     
@@ -40,4 +41,6 @@ struct GameBoy {
     void set_cartridge_mode();
 
     void apply_post_boot_state();
+
+    int try_speed_switch();
 };

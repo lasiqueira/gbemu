@@ -201,34 +201,39 @@ uint8_t Memory::read(uint16_t addr) const
             return io[addr - ADDR_IO_START];
         }
 
-        if (addr == IO_VBK && gameboy->cgb_mode) 
+        if (addr == IO_VBK && cgb_mode) 
         {
             return vram_bank | 0xFE;
         }
 
-        if (addr == IO_SVBK && gameboy->cgb_mode)
+        if (addr == IO_SVBK && cgb_mode)
         {
             return wram_bank | 0xF8; // Upper 5 bits always set
         }
 
-        if(addr == IO_BGPI && gameboy->cgb_mode)
+        if(addr == IO_BGPI && cgb_mode)
         {
             return bcps | 0x40; // Upper bit always set
         }
 
-        if(addr == IO_OBPI && gameboy->cgb_mode)
+        if(addr == IO_OBPI && cgb_mode)
         {
             return ocps | 0x40; // Upper bit always set
         }
 
-        if(addr == IO_BGPD && gameboy->cgb_mode)
+        if(addr == IO_BGPD && cgb_mode)
         {
             return bg_palette_ram[bcps & 0x3F];
         }
 
-        if(addr == IO_OBPD && gameboy->cgb_mode)
+        if(addr == IO_OBPD && cgb_mode)
         {
             return obj_palette_ram[ocps & 0x3F];
+        }
+
+        if (addr == IO_KEY1 && cgb_mode && !dmg_compat)
+        {
+            return (double_speed ? 0x80 : 0) | (key1_armed ? 1 : 0) | 0x7E;
         }
 
         return io[addr - ADDR_IO_START];
@@ -444,29 +449,29 @@ void Memory::write(uint16_t addr, uint8_t value)
         }
 
         // VRAM Bank register (0xFF4F) - only writable in CGB mode
-        else if (addr == IO_VBK && gameboy->cgb_mode) 
+        else if (addr == IO_VBK && cgb_mode) 
         {
             vram_bank = value & 1;
         }
 
         // WRAM Bank register (0xFF70) - only writable in CGB mode
-        else if (addr == IO_SVBK && gameboy->cgb_mode)
+        else if (addr == IO_SVBK && cgb_mode)
         {
             wram_bank = value & 0x07;
             if (wram_bank == 0) wram_bank = 1; // Bank 0 is not switchable
         }
 
-        else if(addr == IO_BGPI && gameboy->cgb_mode)
+        else if (addr == IO_BGPI && cgb_mode)
         {
             bcps = value;
         }
         
-        else if(addr == IO_OBPI && gameboy->cgb_mode)
+        else if (addr == IO_OBPI && cgb_mode)
         {
             ocps = value;
         }
 
-        else if(addr == IO_BGPD && gameboy->cgb_mode)
+        else if (addr == IO_BGPD && cgb_mode)
         {
             uint8_t idx = bcps & 0x3F;
             bg_palette_ram[idx] = value;
@@ -476,7 +481,7 @@ void Memory::write(uint16_t addr, uint8_t value)
             if (bcps & 0x80) bcps = 0x80 | ((idx + 1) & 0x3F);
         }
 
-        else if(addr == IO_OBPD && gameboy->cgb_mode)
+        else if (addr == IO_OBPD && cgb_mode)
         {
             uint8_t idx = ocps & 0x3F;
             obj_palette_ram[idx] = value;
@@ -484,6 +489,11 @@ void Memory::write(uint16_t addr, uint8_t value)
             uint16_t rgb555 = obj_palette_ram[colour * 2] | (obj_palette_ram[colour * 2 + 1] << 8);
             gameboy->ppu.update_palette_color(true, colour, rgb555);
             if (ocps & 0x80) ocps = 0x80 | ((idx + 1) & 0x3F);
+        }
+
+        else if (addr == IO_KEY1 && cgb_mode && !dmg_compat)
+        {
+            key1_armed = value & 1; // bit 7 is read-only
         }
         else
         {
@@ -549,7 +559,7 @@ void Memory::tick_timers(int cycles)
         }
     }
 
-    mbc.tick_rtc(cycles);
+    mbc.tick_rtc(to_real_time(cycles)); // RTC runs in real time
 }
 
 void MBC::advance_rtc(int64_t seconds)
