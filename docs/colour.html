@@ -21,7 +21,7 @@
     <main>
         <article class="content">
         <h2>Game Boy Color</h2>
-        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–2: model plumbing, banked memory and colour rendering (in progress)</em></p>
+        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–3: model plumbing, banked memory, colour rendering and timing/DMA (in progress)</em></p>
 
         <section>
             <h2>Design Decision — DMG Stays, Model Is Chosen at Boot</h2>
@@ -529,6 +529,133 @@ if (dmg_priority) std::sort(...);</code></pre>
         </section>
 
         <section>
+            <h2>Phase 3 — Timing and DMA</h2>
+            <p>
+                This phase touches the cycle accounting that the CPU bus-timing work carefully established, so the
+                rule is that the <code>double_speed == false</code> path must stay byte-identical to the DMG
+                behaviour. Two features land here: double-speed mode and VRAM DMA.
+            </p>
+
+            <h3>Who Owns What</h3>
+            <p>
+                Two rules came out of this phase and shape everything in it. First, the CPU, PPU and APU never call
+                into <code>GameBoy</code>. When one of them detects something that needs the whole machine to react,
+                it sets a request flag and <code>GameBoy::step_frame()</code> acts on it after the instruction finishes.
+                Second, state that changes at runtime has exactly one owner. <code>Memory</code> owns all the register
+                state, including <code>double_speed</code>, <code>key1_armed</code> and the HDMA registers; the APU and
+                RTC read it through the <code>Memory&amp;</code> they already receive. Copies are only made for state that
+                never changes after load (<code>cgb_mode</code>, <code>dmg_compat</code>).
+            </p>
+
+            <h3>Double-Speed Mode (KEY1)</h3>
+            <p>
+                A CGB can run its CPU at 8 MHz. Only part of the machine speeds up:
+            </p>
+            <table>
+                <tr><th>Runs 2× faster (CPU clock)</th><th>Stays at normal rate (real time)</th></tr>
+                <tr><td>CPU, DIV/TIMA, serial, OAM DMA</td><td>PPU, APU (pitch and sample rate), MBC3 RTC, HDMA</td></tr>
+            </table>
+            <p>
+                The register is the easy part: <code>$FF4D</code> reads bit 7 = current speed, bit 0 = switch armed,
+                other bits 1, and only bit 0 is writable. The hard part is that <code>cycles</code> throughout the
+                codebase means T-cycles <em>at the current CPU speed</em>, so every consumer has to decide which clock it
+                follows. <code>Memory::to_real_time(cycles)</code> halves the count for the real-time column:
+            </p>
+            <pre><code>void GameBoy::on_memory_cycle(int cycles)
+{
+    int sys = memory.to_real_time(cycles);   // real-time cycles
+    ppu.step(sys, memory);
+    apu.step(sys, cycles, memory);           // channels use sys, frame sequencer uses cycles
+    memory.tick_timers(cycles);              // DIV/TIMA follow the CPU clock: do not halve
+}</code></pre>
+            <p>
+                The order matters: the APU reads <code>div_counter</code> before <code>tick_timers</code> advances it.
+                <code>APU::step</code> takes both counts because it has two unrelated clocks. Channel periods and the
+                44.1 kHz sample counter are real-time, which keeps pitch correct. The frame sequencer is driven by a DIV
+                bit edge, and DIV ticks twice as fast in double speed, so it watches bit 13 instead of bit 12 to stay at
+                512 Hz:
+            </p>
+            <pre><code>uint16_t mask = memory.double_speed ? 0x2000 : 0x1000;
+if ((div_before &amp; mask) &amp;&amp; !(div_after &amp; mask)) frame_seq_step();</code></pre>
+
+            <h4>The Switch Itself</h4>
+            <p>
+                The switch happens when <code>STOP</code> executes with bit 0 armed. <code>CPU::stop()</code> only sets
+                <code>stop_executed</code>; <code>step_frame()</code> then calls <code>GameBoy::try_speed_switch()</code>,
+                which toggles the speed, clears the arm bit, resets DIV and runs the 2050 M-cycle (8200 T-cycle) stall.
+                The stall is a loop of 4-cycle steps rather than one large <code>ppu.step(8200)</code>, because
+                <code>PPU::step</code> handles at most one mode transition per call and a big step would skip whole
+                scanlines. The APU gets a CPU-clock count of 0 during the stall, since DIV does not tick.
+            </p>
+            <p>
+                <code>step_frame()</code> accumulates <em>real-time</em> cycles towards the 70224-cycle frame, so a
+                frame keeps the same wall-clock length in both speeds, even if the switch happens mid-frame. The RTC
+                also needed the real-time count, because it counts seconds against <code>CPU_FREQUENCY</code>.
+            </p>
+            <p>
+                Failure modes are easy to tell apart: wrong audio pitch means the APU got CPU cycles; right pitch but the
+                game runs at the wrong speed means the frame accounting is wrong; right speed but
+                <code>instr_timing</code> or <code>dmg_sound</code> breaking means the timers were halved by mistake.
+            </p>
+
+            <h3>HDMA / GDMA (<code>$FF51</code>–<code>$FF55</code>)</h3>
+            <p>
+                VRAM DMA copies data from ROM or RAM into VRAM in <code>$10</code>-byte blocks. Bit 7 of the
+                <code>$FF55</code> write picks the mode: general-purpose (GDMA) copies everything at once and stops the
+                CPU, while HBlank DMA (HDMA) copies one block at the start of each HBlank on lines 0–143 and lets the CPU
+                run in between. HDMA1–4 are write-only and read <code>$FF</code>. <code>$FF55</code> reads bit 7 = 1 for
+                "not active" and the blocks remaining minus 1 in bits 0–6.
+            </p>
+            <p>
+                <code>Memory</code> holds the registers (<code>hdma_source</code>, <code>hdma_dest</code> as a VRAM
+                <em>offset</em>, <code>hdma_blocks_left</code>, <code>hdma_active</code>) and records a request flag.
+                <code>GameBoy</code> does the copy, because only it can tick the rest of the machine during the stall.
+                Counting blocks makes the <code>$FF55</code> read a one-liner with no special case for "finished":
+            </p>
+            <pre><code>return (hdma_active ? 0x00 : 0x80) | ((hdma_blocks_left - 1) &amp; 0x7F);
+// finished: blocks_left = 0 -> (0 - 1) &amp; 0x7F = 0x7F, with bit 7 set -> $FF</code></pre>
+            <p>
+                A block takes about 8 µs in both speeds, so the stall is 8 M-cycles at normal speed and 16 at double
+                speed. The copy must not be free: each block ticks the machine through <code>on_memory_cycle(4)</code>,
+                otherwise LY, timers and audio drift.
+            </p>
+            <pre><code>int GameBoy::hdma_copy_block()
+{
+    // copy 16 bytes through Memory::read into the current VRAM bank, advance source/dest
+    int m_cycles = memory.double_speed ? 16 : 8;
+    for (int i = 0; i &lt; m_cycles; ++i) on_memory_cycle(4);
+    return m_cycles * 4;      // CPU cycles stalled, at the current speed
+}</code></pre>
+            <p>
+                GDMA runs right after the instruction that wrote <code>$FF55</code>, which is the same moment hardware
+                starts it. For HDMA the PPU sets <code>hblank_started</code> on each Drawing → HBlank transition, and
+                <code>step_frame()</code> copies one block when it sees the flag. VBlank lines never go through that
+                transition, so there is no transfer during VBlank for free, and the transfer resumes at LY 0. The
+                transfer is also paused while the CPU is halted: the flag is still cleared, but no block is copied.
+            </p>
+            <p>
+                One trap worth recording: the <code>hblank_started = true</code> line belongs in the
+                <code>Drawing</code> case of <code>PPU::step</code>. <code>PPU::set_mode</code> has a case with the same
+                name, and putting the code there makes mode 3 end instantly, shortening every scanline by about 172 dots.
+                The Blargg <code>oam_bug</code> test catches it.
+            </p>
+
+            <h3>Verification</h3>
+            <p>
+                DMG regression unchanged, run with <code>--model=dmg</code>: <code>cpu_instrs</code>,
+                <code>instr_timing</code>, <code>mem_timing</code>, <code>mem_timing-2</code> and <code>oam_bug</code>
+                pass, and <code>dmg_sound</code> still fails only test 10. HDMA was checked with a small hand-assembled
+                CGB test ROM that runs a GDMA and an HBlank transfer, polls <code>$FF55</code> until completion and
+                reads the VRAM contents back over serial. The <code>$FF55</code> values, the copied bytes and the first
+                byte past each range all matched. Double speed has not yet been tested with a ROM that actually
+                switches, and HDMA has not been checked in double speed, when cancelling a transfer, or during
+                <code>HALT</code> (<a href="https://github.com/alloncm/MagenTests" target="_blank">MagenTests</a> has a ROM
+                for that case).
+            </p>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/CGB_Registers.html" target="_blank">Pandocs — CGB Registers</a> (KEY1, VRAM DMA)</em></p>
+        </section>
+
+        <section>
             <h2>Status</h2>
             <ul>
                 <li>✓ CGB flag parsed from the cartridge header</li>
@@ -543,7 +670,9 @@ if (dmg_priority) std::sort(...);</code></pre>
                 <li>✓ BG/window tile attributes: palette, tile bank, X/Y flip</li>
                 <li>✓ OBJ attributes and <code>OPRI</code> priority mode</li>
                 <li>✓ CGB BG-to-OBJ priority resolution</li>
-                <li>⏳ Double speed, HDMA, DMG-on-CGB compatibility palettes, DMG-quirk gating — later phases</li>
+                <li>✓ Double-speed mode (<code>KEY1</code> + <code>STOP</code>), with the PPU/APU/RTC kept on real time and DIV/TIMA on the CPU clock</li>
+                <li>✓ HDMA / GDMA (<code>$FF51</code>–<code>$FF55</code>), including the HALT pause</li>
+                <li>⏳ DMG-on-CGB compatibility palettes, DMG-quirk gating, hotkeys, authentic compat palettes — later phases</li>
             </ul>
         </section>
 

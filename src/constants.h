@@ -39,6 +39,10 @@ constexpr uint16_t IO_BGPI   = 0xFF68; // BG Palette Index
 constexpr uint16_t IO_BGPD   = 0xFF69; // BG Palette Data
 constexpr uint16_t IO_OBPI   = 0xFF6A; // OBJ Palette Index
 constexpr uint16_t IO_OBPD   = 0xFF6B; // OBJ Palette Data
+constexpr uint16_t IO_HDMA1  = 0xFF51; // VRAM DMA source high
+constexpr uint16_t IO_HDMA2  = 0xFF52; // VRAM DMA source low
+constexpr uint16_t IO_HDMA3  = 0xFF53; // VRAM DMA destination high
+constexpr uint16_t IO_HDMA4  = 0xFF54; // VRAM DMA destination low
 
 // Memory map region boundaries
 constexpr uint16_t ADDR_ROM_BANK0_END  = 0x4000; // End of fixed ROM bank 0

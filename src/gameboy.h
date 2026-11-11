@@ -43,4 +43,6 @@ struct GameBoy {
     void apply_post_boot_state();
 
     int try_speed_switch();
+
+    int hdma_copy_block();
 };

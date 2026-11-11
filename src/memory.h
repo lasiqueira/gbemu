@@ -84,6 +84,13 @@ struct Memory {
     bool double_speed = false;
     bool key1_armed = false;
 
+    // CGB VRAM DMA (HDMA1-5, $FF51-$FF55)
+    uint16_t hdma_source = 0; // low 4 bits always 0
+    uint16_t hdma_dest = 0;   // offset inside VRAM, 0x0000-0x1FF0
+    uint8_t hdma_blocks_left = 0; // $10-byte blocks still to copy
+    bool hdma_active = false; // an HBlank transfer is running
+    bool gdma_requested = false; // set by the $FF55 write, consumed by GameBoy
+
     // Convert CPU T-cycles at the current speed into real-time cycles (PPU/APU/RTC clock)
     int to_real_time(int cpu_cycles) const { return double_speed ? cpu_cycles >> 1 : cpu_cycles; }
 

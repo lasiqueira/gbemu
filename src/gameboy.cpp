@@ -79,6 +79,29 @@ int GameBoy::step_frame()
             running = false;
             return cycles; // Error occurred
         }
+
+        if (memory.gdma_requested)
+        {
+            memory.gdma_requested = false;
+            while (memory.hdma_blocks_left > 0)
+            {
+                cycles += hdma_copy_block();
+            }
+        }
+
+        if (ppu.hblank_started)
+        {
+            ppu.hblank_started = false; // Reset the flag after handling HBlank
+            if (memory.hdma_active && !cpu.halted)
+            {
+                cycles += hdma_copy_block();
+                if (memory.hdma_blocks_left == 0)
+                {
+                    memory.hdma_active = false;
+                }
+            }
+        }
+
         int real_cycles = memory.to_real_time(cycles); // real-time cycles so a frame stays 70224; taken before any speed switch
         if (cpu.stop_executed)
         {
@@ -205,7 +228,6 @@ void GameBoy::apply_post_boot_state()
 
         memory.write_io_raw(IO_SVBK, 0xF8); // WRAM bank 1
         memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
-        memory.write_io_raw(IO_HDMA5, 0xFF); // No transfer active
         memory.write_io_raw(IO_OPRI, dmg_compat ? 0x01 : 0x00); // CGB (OAM-order) object priority
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
         ppu.rebuild_palette_cache(memory);
@@ -226,4 +248,30 @@ int GameBoy::try_speed_switch()
     }
 
     return 8200; // real-time cycles spent in the stall
+}
+
+int GameBoy::hdma_copy_block()
+{
+    for (int i = 0; i < 0x10; ++i)
+    {
+        uint8_t value = memory.read(memory.hdma_source + i);
+        memory.vram[memory.vram_bank * 0x2000 + memory.hdma_dest + i] = value;
+    }
+    memory.hdma_source += 0x10;
+    memory.hdma_dest += 0x10;
+    memory.hdma_blocks_left--;
+
+    if (memory.hdma_dest >= 0x2000) // destination ran past $9FFF: the transfer stops early
+    {
+        memory.hdma_dest &= 0x1FF0;
+        memory.hdma_blocks_left = 0;
+    }
+
+    int m_cycles = memory.double_speed ? 16 : 8; // ~8 us of real time in both speeds
+
+    for (int i = 0; i < m_cycles; ++i)
+    {
+        on_memory_cycle(4);
+    }
+    return m_cycles * 4; // CPU cycles stalled, at the current speed
 }

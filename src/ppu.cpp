@@ -51,6 +51,7 @@ void PPU::step(int cycles, Memory& memory)
                 mode_cycles -= MODE_3_CYCLES;
                 render_scanline(memory);
                 set_mode(PPUMode::HBlank, memory);
+                hblank_started = true;
             }
             break;
             

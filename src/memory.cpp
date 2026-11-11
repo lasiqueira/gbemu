@@ -236,6 +236,16 @@ uint8_t Memory::read(uint16_t addr) const
             return (double_speed ? 0x80 : 0) | (key1_armed ? 1 : 0) | 0x7E;
         }
 
+        if (addr >= IO_HDMA1 && addr <= IO_HDMA4 && cgb_mode && !dmg_compat)
+        {
+            return 0xFF; //write only
+        }
+
+        if (addr == IO_HDMA5 && cgb_mode && !dmg_compat)
+        {
+            return (hdma_active ? 0x00 : 0x80) | ((hdma_blocks_left -1) & 0x7F);
+        }
+
         return io[addr - ADDR_IO_START];
     }
     
@@ -489,6 +499,40 @@ void Memory::write(uint16_t addr, uint8_t value)
             uint16_t rgb555 = obj_palette_ram[colour * 2] | (obj_palette_ram[colour * 2 + 1] << 8);
             gameboy->ppu.update_palette_color(true, colour, rgb555);
             if (ocps & 0x80) ocps = 0x80 | ((idx + 1) & 0x3F);
+        }
+        
+        else if (addr == IO_HDMA1 && cgb_mode && !dmg_compat)
+        {
+            hdma_source = (hdma_source & 0x00FF) | (value << 8);
+        }
+        
+        else if (addr == IO_HDMA2 && cgb_mode && !dmg_compat)
+        {
+            hdma_source = (hdma_source & 0xFF00) | (value & 0xF0);
+        }
+        
+        else if (addr == IO_HDMA3 && cgb_mode && !dmg_compat)
+        {
+            hdma_dest = (hdma_dest & 0x00FF) | ((value & 0x1F) << 8);
+        }
+        
+        else if (addr == IO_HDMA4 && cgb_mode && !dmg_compat)
+        {
+            hdma_dest = (hdma_dest & 0xFF00) | (value & 0xF0);
+        }
+
+        else if (addr == IO_HDMA5 && cgb_mode && !dmg_compat)
+        {
+            if (hdma_active && !(value & 0x80))
+            {
+                hdma_active = false; // cancel HBlank transfer
+            }
+            else
+            {
+                hdma_blocks_left = (value & 0x7F) + 1;
+                hdma_active = (value & 0x80) != 0;
+                gdma_requested = !hdma_active;
+            }
         }
 
         else if (addr == IO_KEY1 && cgb_mode && !dmg_compat)
