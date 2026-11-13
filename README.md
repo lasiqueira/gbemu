@@ -172,11 +172,13 @@ The build system uses:
 ./build/bin/gbemu rom.gb --disassemble       # Linux/macOS
 .\build\bin\Release\gbemu.exe rom.gb -d      # Windows (short form)
 
-# Choose the hardware model (default: auto)
-.\build\bin\Release\gbemu.exe rom.gb --model=auto   # CGB cartridge -> CGB, otherwise DMG
-.\build\bin\Release\gbemu.exe rom.gb --model=dmg    # original Game Boy
+# Choose the hardware model (default: cgb)
 .\build\bin\Release\gbemu.exe rom.gb --model=cgb    # Game Boy Color (DMG games run in colour compat mode)
+.\build\bin\Release\gbemu.exe rom.gb --model=dmg    # original Game Boy
+.\build\bin\Release\gbemu.exe rom.gb --model=auto   # CGB cartridge -> CGB, otherwise DMG
 ```
+
+With the default (`cgb`), DMG games run in colour, with the palette the real Game Boy Color boot ROM would pick for the title, and without the DMG-only hardware quirks (such as the OAM bug). Use `--model=dmg` for original-hardware behaviour, for example when running the Blargg DMG test ROMs.
 
 **Hotkeys:**
 - **F1** - Pause / resume

@@ -119,7 +119,7 @@ bool  dmg_compat      = false;      // CGB hardware running a DMG cartridge</cod
             </p>
 
             <h3>Command Line</h3>
-            <p>The model can be forced from the command line; <code>auto</code> is the default:</p>
+            <p>The model can be forced from the command line; <code>cgb</code> is the default, so DMG cartridges run in colour in compatibility mode unless <code>--model=dmg</code> or <code>--model=auto</code> is given:</p>
             <pre><code>gbemu.exe &lt;rom&gt; [--disassemble|-d] [--headless] [--model=auto|dmg|cgb]</code></pre>
             <p>
                 An unrecognised value is rejected with an error rather than falling back to a default. After loading,
@@ -870,7 +870,9 @@ if (dmg_compat &amp;&amp; is_cgb_cart_only_register(addr)) return;        // wri
                 <li>✓ DMG-only quirks gated off on CGB hardware; <code>cgb_sound</code> passes 12/12</li>
                 <li>✓ CGB-only registers hidden from DMG cartridges; CGB wave RAM power-on pattern</li>
                 <li>✓ Hotkeys: pause, reset, model cycle, colour correction; window title shows the running model</li>
-                <li>⏳ Regression/test matrix, authentic per-game compat palettes (title checksum lookup), forced-CGB default — remaining steps</li>
+                <li>✓ Authentic per-game compat palettes (boot ROM title-checksum lookup) and compat-mode boot registers</li>
+                <li>✓ Forced CGB is the default model (<code>--model=dmg</code> for original-hardware behaviour)</li>
+                <li>⏳ Visual CGB test ROMs (cgb-acid2, MagenTests), and re-running the CGB column of the test matrix</li>
                 <li>⏳ Double speed has not been tested with a ROM that actually switches</li>
             </ul>
         </section>

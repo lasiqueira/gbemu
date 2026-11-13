@@ -438,7 +438,7 @@ int main(int argc, char** argv)
     // Check for disassemble flag
     bool headless_mode = false;
 
-    std::string model_arg = "auto"; // default model is auto
+    std::string model_arg = "cgb"; // default model is cgb
 
     for (int i = 2; i < argc; ++i)
     {
