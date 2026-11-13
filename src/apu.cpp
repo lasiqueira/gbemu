@@ -50,9 +50,10 @@ void APU::step(int sys, int cycles, Memory& memory)
 
 void APU::on_register_write(uint16_t addr, uint8_t value)
 {
-    if (!master_enabled && addr != IO_NR52 && addr != IO_NR11 && addr != IO_NR21 && addr != IO_NR31 && addr != IO_NR41)
+    bool dmg_length_write = !cgb_mode && (addr == IO_NR11 || addr == IO_NR21 || addr == IO_NR31 || addr == IO_NR41);
+    if (!master_enabled && addr != IO_NR52 && !dmg_length_write)
     {
-        return; // DMG quirk: length timers (NRx1) stay writable while the APU is off, unlike other registers
+        return; // APU off: only NR52 is writable (plus NRx1 on DMG)
     }
     switch (addr)
     {
@@ -83,15 +84,18 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel3 = {};
                 channel4 = {};
 
-                channel1.length_counter = lc1;
-                channel2.length_counter = lc2;
-                channel3.length_counter = lc3;
-                channel4.length_counter = lc4;
-
-                channel1.length_value = lv1;
-                channel2.length_value = lv2;
-                channel3.length_value = lv3;
-                channel4.length_value = lv4;
+                if(!cgb_mode)
+                {
+                    channel1.length_counter = lc1;
+                    channel2.length_counter = lc2;
+                    channel3.length_counter = lc3;
+                    channel4.length_counter = lc4;
+    
+                    channel1.length_value = lv1;
+                    channel2.length_value = lv2;
+                    channel3.length_value = lv3;
+                    channel4.length_value = lv4;
+                }
             }
             else if (!was_enabled && powered)
             {
@@ -257,7 +261,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             {
                 // DMG wave corruption: retriggering exactly as CH3 is about to read a byte latches
                 // that upcoming byte (or its 4-byte-aligned block) into wave RAM position 0.
-                if (channel3.enabled && channel3.just_read_sample)
+                if (!cgb_mode && channel3.enabled && channel3.just_read_sample)
                 {
                     uint8_t pos_byte = ((channel3.wave_pos + 1) >> 1) & 0x0F; // byte about to be read, not the current one
                     
@@ -400,7 +404,7 @@ void APU::on_wave_ram_write(uint16_t offset, uint8_t value)
     {
         if (channel3.enabled)
         {
-            if (channel3.just_read_sample) wave_ram[channel3.wave_pos >> 1] = value; // else: locked out, write dropped
+            if (cgb_mode || channel3.just_read_sample) wave_ram[channel3.wave_pos >> 1] = value; // else: locked out, write dropped
         }
         else
         {
@@ -413,7 +417,7 @@ uint8_t APU::on_wave_ram_read(uint16_t offset) const
 {
     if (channel3.enabled)
     {
-        return channel3.just_read_sample ? wave_ram[channel3.wave_pos >> 1] : 0xFF;
+        return (cgb_mode || channel3.just_read_sample) ? wave_ram[channel3.wave_pos >> 1] : 0xFF;
     }
     return wave_ram[offset];
 }

@@ -196,6 +196,7 @@ void GameBoy::set_cartridge_mode()
     model = model_is_auto ? (cart_is_cgb ? Model::CGB : Model::DMG) : requested_model;
     cgb_mode = (model == Model::CGB);
     ppu.cgb_mode = cgb_mode;
+    apu.cgb_mode = cgb_mode;
     dmg_compat = (cgb_mode && !cart_is_cgb);
     ppu.dmg_compat = dmg_compat;
     memory.cgb_mode = cgb_mode;
@@ -242,6 +243,8 @@ void GameBoy::apply_post_boot_state()
         memory.write_io_raw(IO_SVBK, 0xF8); // WRAM bank 1
         memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
         memory.write_io_raw(IO_OPRI, dmg_compat ? 0x01 : 0x00); // CGB (OAM-order) object priority
+        for (int i = 0; i < 16; ++i) // CGB boot ROM leaves wave RAM as 00 FF 00 FF ...
+            apu.wave_ram[i] = (i & 1) ? 0xFF : 0x00;
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
         if(dmg_compat)
         {

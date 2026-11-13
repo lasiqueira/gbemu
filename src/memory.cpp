@@ -5,6 +5,13 @@
 #include <cstdio>
 #include <ctime>
 
+// Registers that only exist for CGB cartridges (Pan Docs: "CGB Mode only")
+static bool is_cgb_cart_only_register(uint16_t addr)
+{
+    return addr == IO_KEY1 || addr == IO_VBK || (addr >= IO_HDMA1 && addr <= IO_HDMA5)
+        || addr == 0xFF56 /* RP */ || addr == IO_SVBK;
+}
+
 void Memory::load_rom(const std::vector<uint8_t>& rom_data)
 {
     rom = rom_data;
@@ -160,6 +167,7 @@ uint8_t Memory::read(uint16_t addr) const
     // I/O Registers: $FF00-$FF7F
     if (addr < ADDR_HRAM_START)
     {
+        if(dmg_compat && is_cgb_cart_only_register(addr)) return 0xFF;
         // Joypad register (0xFF00)
         if (addr == IO_JOYPAD)
         {
@@ -231,17 +239,17 @@ uint8_t Memory::read(uint16_t addr) const
             return obj_palette_ram[ocps & 0x3F];
         }
 
-        if (addr == IO_KEY1 && cgb_mode && !dmg_compat)
+        if (addr == IO_KEY1 && cgb_mode)
         {
             return (double_speed ? 0x80 : 0) | (key1_armed ? 1 : 0) | 0x7E;
         }
 
-        if (addr >= IO_HDMA1 && addr <= IO_HDMA4 && cgb_mode && !dmg_compat)
+        if (addr >= IO_HDMA1 && addr <= IO_HDMA4 && cgb_mode)
         {
             return 0xFF; //write only
         }
 
-        if (addr == IO_HDMA5 && cgb_mode && !dmg_compat)
+        if (addr == IO_HDMA5 && cgb_mode)
         {
             return (hdma_active ? 0x00 : 0x80) | ((hdma_blocks_left -1) & 0x7F);
         }
@@ -398,6 +406,8 @@ void Memory::write(uint16_t addr, uint8_t value)
     // I/O Registers: $FF00-$FF7F
     if (addr < ADDR_HRAM_START)
     {
+        if(dmg_compat && is_cgb_cart_only_register(addr)) return;
+        
         // Joypad register (0xFF00) - only bits 4-5 are writable
         if (addr == IO_JOYPAD)
         {
@@ -501,27 +511,27 @@ void Memory::write(uint16_t addr, uint8_t value)
             if (ocps & 0x80) ocps = 0x80 | ((idx + 1) & 0x3F);
         }
         
-        else if (addr == IO_HDMA1 && cgb_mode && !dmg_compat)
+        else if (addr == IO_HDMA1 && cgb_mode)
         {
             hdma_source = (hdma_source & 0x00FF) | (value << 8);
         }
         
-        else if (addr == IO_HDMA2 && cgb_mode && !dmg_compat)
+        else if (addr == IO_HDMA2 && cgb_mode)
         {
             hdma_source = (hdma_source & 0xFF00) | (value & 0xF0);
         }
         
-        else if (addr == IO_HDMA3 && cgb_mode && !dmg_compat)
+        else if (addr == IO_HDMA3 && cgb_mode)
         {
             hdma_dest = (hdma_dest & 0x00FF) | ((value & 0x1F) << 8);
         }
         
-        else if (addr == IO_HDMA4 && cgb_mode && !dmg_compat)
+        else if (addr == IO_HDMA4 && cgb_mode)
         {
             hdma_dest = (hdma_dest & 0xFF00) | (value & 0xF0);
         }
 
-        else if (addr == IO_HDMA5 && cgb_mode && !dmg_compat)
+        else if (addr == IO_HDMA5 && cgb_mode)
         {
             if (hdma_active && !(value & 0x80))
             {
@@ -535,7 +545,7 @@ void Memory::write(uint16_t addr, uint8_t value)
             }
         }
 
-        else if (addr == IO_KEY1 && cgb_mode && !dmg_compat)
+        else if (addr == IO_KEY1 && cgb_mode)
         {
             key1_armed = value & 1; // bit 7 is read-only
         }
@@ -740,6 +750,7 @@ void Memory::tick_cycle(int cycles)
 
 void Memory::oam_bug(OamCorruption type)
 {
+    if (cgb_mode) return;
     gameboy->ppu.corrupt_oam(*this, type);
 }
 
