@@ -21,7 +21,7 @@
     <main>
         <article class="content">
         <h2>Game Boy Color</h2>
-        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–3: model plumbing, banked memory, colour rendering and timing/DMA (in progress)</em></p>
+        <p><em>Adding CGB support while keeping full DMG accuracy — Phases 0–5: model plumbing, banked memory, colour rendering, timing/DMA, DMG compatibility and runtime controls (in progress)</em></p>
 
         <section>
             <h2>Design Decision — DMG Stays, Model Is Chosen at Boot</h2>
@@ -656,6 +656,200 @@ if ((div_before &amp; mask) &amp;&amp; !(div_after &amp; mask)) frame_seq_step()
         </section>
 
         <section>
+            <h2>Phase 4 — DMG Cartridges on CGB Hardware</h2>
+            <p>
+                A real CGB runs DMG games too, in colour. That is <code>dmg_compat</code>: CGB <em>hardware</em>
+                (so <code>cgb_mode</code> is true) running a <em>cartridge</em> that has no colour data. Keeping the two
+                flags separate matters here. Whether a behaviour is a hardware quirk or a cartridge-mode rule decides
+                which flag gates it.
+            </p>
+
+            <h3>Compat Palettes</h3>
+            <p>
+                The rendering side already existed from Phase 2: in compat mode the PPU treats <code>BGP</code> as an
+                index into BG palette 0, and <code>OBP0</code>/<code>OBP1</code> as indexes into OBJ palettes 0 and 1.
+                The only thing missing was colour in palette RAM. BG palette RAM starts all white, so a DMG game on CGB
+                rendered a blank screen. The real boot ROM fills it in, and this emulator skips the boot ROM, so
+                <code>apply_post_boot_state()</code> does it:
+            </p>
+            <pre><code>// RGB555, little-endian, 8 bytes per palette
+static void write_cram_palette(uint8_t* cram, int palette, const uint16_t (&amp;colours)[4]);
+
+constexpr uint16_t COMPAT_GREY[4] = { 0x7FFF, 0x56B5, 0x294A, 0x0000 }; // temporary
+
+if (dmg_compat)
+{
+    write_cram_palette(memory.bg_palette_ram,  0, COMPAT_GREY);
+    write_cram_palette(memory.obj_palette_ram, 0, COMPAT_GREY);
+    write_cram_palette(memory.obj_palette_ram, 1, COMPAT_GREY);
+}
+ppu.rebuild_palette_cache(memory);   // the cache holds converted RGBA, so rebuild it</code></pre>
+            <p>
+                <code>palette * 8</code> is the byte offset: four colours of two bytes each. Greyscale is a placeholder.
+                The real boot ROM picks a palette by checksumming the cartridge title, and that lookup is a later step.
+            </p>
+            <p>
+                Two smaller points belong with this. In compat mode <code>OPRI</code> is set to 1, which selects DMG
+                object priority (lower X wins) instead of OAM order. And LCDC bit 0 keeps its DMG meaning, BG enable,
+                because on CGB-mode games it only means priority. The renderer's
+                <em>"background off → blank"</em> shortcut is therefore skipped only for <code>cgb_mode &amp;&amp; !dmg_compat</code>.
+            </p>
+
+            <h3>Turning DMG Quirks Off</h3>
+            <p>
+                Several quirks added for the DMG test suite are wrong on CGB hardware. They are hardware behaviours, so
+                they are gated by <code>cgb_mode</code>, not <code>dmg_compat</code>. A DMG game running on a CGB
+                still gets CGB hardware. Blargg's <code>cgb_sound</code> ROM was the to-do list: it started at
+                <code>01–07:ok 08:01 09:01 10:01 11:04 12:02</code>.
+            </p>
+            <table>
+                <tr><th>Quirk</th><th>DMG</th><th>CGB hardware</th><th>Fixes</th></tr>
+                <tr><td>OAM corruption bug</td><td>present</td><td>absent</td><td><code>oam_bug</code> still passes on DMG</td></tr>
+                <tr><td>Wave RAM access while CH3 plays</td><td>only on the cycle CH3 reads, else <code>$FF</code> / dropped</td><td>always works, but still redirected to the byte CH3 is playing</td><td><code>09</code>, <code>12</code></td></tr>
+                <tr><td>Wave RAM corruption on CH3 retrigger</td><td>present</td><td>absent</td><td><code>10</code></td></tr>
+                <tr><td>Length counters across APU power-off</td><td>survive</td><td>reset</td><td><code>08</code>, <code>11</code></td></tr>
+                <tr><td>NRx1 writable while APU is off</td><td>yes</td><td>no</td><td><code>08</code>, <code>11</code></td></tr>
+            </table>
+            <p>
+                The OAM bug is one line, because every trigger (bus reads and writes, <code>INC/DEC rr</code>,
+                <code>PUSH</code>, <code>CALL</code>, <code>RST</code>, interrupt dispatch) goes through
+                <code>Memory::oam_bug()</code>. When a behaviour has one choke point, gate it there instead of at every
+                caller. The APU needs its own copy of the flag because its wave RAM functions are called from
+                <code>Memory</code> without a <code>Memory&amp;</code>:
+            </p>
+            <pre><code>void Memory::oam_bug(OamCorruption type)
+{
+    if (cgb_mode) return; // the OAM corruption bug doesn't exist on CGB hardware
+    gameboy-&gt;ppu.corrupt_oam(*this, type);
+}
+
+// APU::on_wave_ram_read, while CH3 is enabled: only the DMG timing lockout is DMG-specific
+return (cgb_mode || channel3.just_read_sample) ? wave_ram[channel3.wave_pos &gt;&gt; 1] : 0xFF;</code></pre>
+            <p>
+                The wave RAM redirect is the easy one to get wrong. On both models an access goes to the byte CH3 is
+                currently playing, not to the address asked for. Only the cycle-exact lockout is DMG-only, so the CGB
+                path keeps <code>wave_pos &gt;&gt; 1</code> and just drops the <code>just_read_sample</code> condition.
+            </p>
+
+            <h3>Hiding CGB-Only Registers</h3>
+            <p>
+                KEY1, VBK, HDMA1–5, RP and SVBK are "CGB mode only": for a DMG cartridge they read <code>$FF</code> and
+                ignore writes. Rather than edit each branch, one early-out sits at the top of the I/O section of
+                <code>Memory::read</code> and <code>Memory::write</code>:
+            </p>
+            <pre><code>if (dmg_compat &amp;&amp; is_cgb_cart_only_register(addr)) return 0xFF;   // read
+if (dmg_compat &amp;&amp; is_cgb_cart_only_register(addr)) return;        // write</code></pre>
+            <p>
+                It is gated on <code>dmg_compat</code> and not <code>!cgb_mode</code>. On real DMG those addresses fall
+                through to the plain I/O array today, and changing that would alter the DMG path, which has to stay
+                byte-identical. The palette registers are left alone: Pan Docs lists them as depending on compat mode
+                rather than being absent, and the compat palettes are written to palette RAM directly.
+            </p>
+
+            <h3>Wave RAM Power-On Contents</h3>
+            <p>
+                The CGB boot ROM fills wave RAM with <code>00 FF</code> repeated; DMG has a different pattern, and the
+                emulator used to start with zeros on both. This isn't tested by <code>cgb_sound</code>, but it is cheap and
+                correct, and a game can read wave RAM before ever writing it. Pan Docs only says that the early CGB0 boot
+                ROM revision skips this step, so the pattern comes from SameBoy's
+                <code>cgb_boot.asm</code>, which writes <code>a</code> (0) and complements it for each of 16 bytes:
+            </p>
+            <pre><code>if (cgb_mode)   // in apply_post_boot_state()
+{
+    for (int i = 0; i &lt; 16; ++i)
+        apu.wave_ram[i] = (i &amp; 1) ? 0xFF : 0x00;
+}</code></pre>
+
+            <h3>Verification</h3>
+            <p>
+                <code>cgb_sound</code> now reports <code>01:ok … 12:ok</code> and <em>Passed</em>. The DMG regression run with
+                <code>--model=dmg</code> is unchanged: <code>cpu_instrs</code>, <code>instr_timing</code>,
+                <code>mem_timing</code>, <code>mem_timing-2</code> and <code>oam_bug</code> pass, and
+                <code>dmg_sound</code> still fails only test 10. Reviewing the gating turned up one bug: the
+                <code>is_cgb_cart_only_register</code> helper was defined below its first use and did not compile.
+                It was moved to the top of <code>memory.cpp</code>.
+            </p>
+            <p><em>Reference: <a href="https://gbdev.io/pandocs/Power_Up_Sequence.html" target="_blank">Pandocs — Power-Up Sequence</a>,
+                <a href="https://gbdev.io/pandocs/Audio_Registers.html" target="_blank">Pandocs — Audio Registers</a></em></p>
+        </section>
+
+        <section>
+            <h2>Phase 5 — Runtime Controls</h2>
+            <p>
+                Until now the model could only be chosen with <code>--model</code> on the command line. Four hotkeys
+                make it possible to switch while the emulator is running, without ever changing the model live.
+            </p>
+            <table>
+                <tr><th>Key</th><th>Action</th></tr>
+                <tr><td><code>F1</code></td><td>Pause / resume</td></tr>
+                <tr><td><code>F2</code></td><td>Reset (reload the ROM)</td></tr>
+                <tr><td><code>F3</code></td><td>Cycle model <code>auto → DMG → CGB</code>, then reload</td></tr>
+                <tr><td><code>F4</code></td><td>Toggle CGB colour correction</td></tr>
+            </table>
+
+            <h3>Reset Means Reload</h3>
+            <p>
+                <code>GameBoy::reset()</code> only clears state. It does not re-apply the model, the post-boot registers
+                or the battery save. <code>GameBoy::load_rom()</code> does all of that, in the right order
+                (<code>reset</code> → <code>memory.load_rom</code> → <code>set_cartridge_mode</code> →
+                <code>apply_post_boot_state</code> → <code>load_battery</code>). So the reset hotkey calls
+                <code>load_rom</code> again, after saving the battery so no progress is lost. That needs the ROM bytes
+                and path, which are now kept in <code>main.cpp</code> instead of being locals:
+            </p>
+            <pre><code>static void reload_rom()
+{
+    gameboy.memory.save_battery(loaded_rom_path);
+    bool color_correction = gameboy.ppu.color_correction;   // reset() would put it back to the default
+    gameboy.load_rom(loaded_rom, loaded_rom_path);
+    gameboy.ppu.color_correction = color_correction;
+    gameboy.ppu.rebuild_palette_cache(gameboy.memory);
+    SDL_ClearAudioStream(audio_stream);                      // drop audio queued by the previous run
+    gameboy.running = true;
+    update_window_title();
+}</code></pre>
+            <p>
+                <code>requested_model</code> and <code>model_is_auto</code> survive <code>reset()</code> because it never
+                touches them, so F3 just sets them and reloads. <code>color_correction</code> does not survive: it lives
+                on the PPU, and <code>reset()</code> replaces the PPU with a fresh one. Without the save and restore,
+                F2 would silently undo F4.
+            </p>
+
+            <h3>Hotkeys Before the Joypad</h3>
+            <p>
+                The dispatch sits at the top of <code>handle_input</code>, before the joypad mapping, and each case
+                <code>return</code>s so these keys never reach the game. <code>!event.key.repeat</code> stops a held
+                key from firing every frame. F4 rebuilds the palette cache because the cache stores <em>converted</em>
+                colours, so changing the conversion means recomputing them. Pause wraps only the
+                <code>step_frame()</code> call and the audio queueing, so rendering and ImGui keep running and the
+                window stays responsive.
+            </p>
+            <p>
+                The window title shows what the emulator is actually running, for example
+                <code>[auto -&gt; DMG]</code> or <code>[CGB -&gt; CGB (DMG compat)]</code>. The model flag alone is not enough,
+                because <code>auto</code> can resolve to either model. Forcing DMG on a CGB-only cartridge runs it as
+                a DMG game and will probably look broken. That is expected.
+            </p>
+
+            <h3>ImGui Controls</h3>
+            <p>
+                The ImGui panels only exist in builds configured with <code>GBEMU_DEBUG</code>, so the hotkeys are the
+                real controls in a normal build. In debug builds the CPU panel also has a colour-correction checkbox and
+                a model combo. They live in one function, <code>draw_emulator_options()</code>, and flip the same fields
+                as the hotkeys. A planned ImGui front-end (ROM picker, settings) can reuse them without untangling them
+                from the CPU-state code.
+            </p>
+
+            <h3>Verification</h3>
+            <p>
+                The DMG regression and <code>cgb_sound</code> are unchanged. The hotkeys were smoke-tested by sending
+                F-keys to a running window: the title cycled <code>[CGB -&gt; CGB]</code>, <code>[auto -&gt; CGB]</code>, <code>[DMG -&gt; DMG]</code> and the process stayed
+                responsive after F1, F2 and F4. The debug build, which contains the ImGui controls, compiles. The
+                checkbox and combo have not been looked at on screen, so check that the fixed-height CPU panel (raised
+                from 200 to 230 pixels) doesn't clip them.
+            </p>
+        </section>
+
+        <section>
             <h2>Status</h2>
             <ul>
                 <li>✓ CGB flag parsed from the cartridge header</li>
@@ -672,7 +866,12 @@ if ((div_before &amp; mask) &amp;&amp; !(div_after &amp; mask)) frame_seq_step()
                 <li>✓ CGB BG-to-OBJ priority resolution</li>
                 <li>✓ Double-speed mode (<code>KEY1</code> + <code>STOP</code>), with the PPU/APU/RTC kept on real time and DIV/TIMA on the CPU clock</li>
                 <li>✓ HDMA / GDMA (<code>$FF51</code>–<code>$FF55</code>), including the HALT pause</li>
-                <li>⏳ DMG-on-CGB compatibility palettes, DMG-quirk gating, hotkeys, authentic compat palettes — later phases</li>
+                <li>✓ DMG-on-CGB compatibility mode with a placeholder greyscale palette</li>
+                <li>✓ DMG-only quirks gated off on CGB hardware; <code>cgb_sound</code> passes 12/12</li>
+                <li>✓ CGB-only registers hidden from DMG cartridges; CGB wave RAM power-on pattern</li>
+                <li>✓ Hotkeys: pause, reset, model cycle, colour correction; window title shows the running model</li>
+                <li>⏳ Regression/test matrix, authentic per-game compat palettes (title checksum lookup), forced-CGB default — remaining steps</li>
+                <li>⏳ Double speed has not been tested with a ROM that actually switches</li>
             </ul>
         </section>
 

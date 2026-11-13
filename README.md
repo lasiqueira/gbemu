@@ -10,6 +10,7 @@ Detailed development documentation with step-by-step explanations is available i
 - CPU and memory systems
 - Instruction set implementation (Part 1 & 2)
 - Input system and PPU rendering
+- Game Boy Color support
 
 ## Screenshot
 
@@ -89,6 +90,14 @@ Detailed development documentation with step-by-step explanations is available i
   - SDL3 stereo audio stream at 44,100 Hz, 16-bit signed
   - Frame-paced audio delivery
 
+- **Game Boy Color (in progress)**
+  - Model selection (`--model=auto|dmg|cgb`) and runtime hotkeys
+  - VRAM and WRAM banking, CGB palette RAM, BG/OBJ attributes and priority
+  - Double-speed mode and HDMA/GDMA
+  - DMG games on CGB hardware run in compatibility mode (greyscale placeholder palette for now)
+  - DMG-only quirks (OAM bug, wave RAM lockout, power-off length counters) disabled on CGB; `cgb_sound` passes
+  - See [docs/colour.html](docs/colour.html)
+
 - **Complete Game Boy Instruction Disassembler**
   - All 256 standard opcodes (0x00-0xFF)
   - All 256 CB-prefixed opcodes (0xCB00-0xCBFF)
@@ -162,7 +171,20 @@ The build system uses:
 # Disassemble only (no execution)
 ./build/bin/gbemu rom.gb --disassemble       # Linux/macOS
 .\build\bin\Release\gbemu.exe rom.gb -d      # Windows (short form)
+
+# Choose the hardware model (default: auto)
+.\build\bin\Release\gbemu.exe rom.gb --model=auto   # CGB cartridge -> CGB, otherwise DMG
+.\build\bin\Release\gbemu.exe rom.gb --model=dmg    # original Game Boy
+.\build\bin\Release\gbemu.exe rom.gb --model=cgb    # Game Boy Color (DMG games run in colour compat mode)
 ```
+
+**Hotkeys:**
+- **F1** - Pause / resume
+- **F2** - Reset (reloads the ROM; battery saves are written first)
+- **F3** - Cycle the model `auto → DMG → CGB`, then reload
+- **F4** - Toggle CGB colour correction
+
+The window title shows the selected model and what is actually running, for example `[auto -> DMG]`. Forcing DMG on a CGB-only cartridge runs it as a DMG game and will probably not display correctly.
 
 **Controls:**
 
@@ -562,7 +584,7 @@ per-opcode failure detail, and a prioritized root-cause/remediation backlog for 
 
 - **Save state functionality**
 - **Debugger interface** (memory viewer, breakpoints)
-- **Game Boy Color support**
+- **Game Boy Color support** (in progress, see [docs/colour.html](docs/colour.html))
 
 ## License
 

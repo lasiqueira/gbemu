@@ -1,6 +1,7 @@
 #include <vector>
 #include <cstdint>
 #include <print>
+#include <format>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -17,7 +18,7 @@ constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
 #ifdef GBEMU_DEBUG
 constexpr int DISASM_PANEL_WIDTH = 300; // Width of disassembly panel
 constexpr int MEMORY_PANEL_WIDTH = 500; // Width of memory viewer panel
-constexpr int CPU_PANEL_HEIGHT = 200; // Height of CPU state panel
+constexpr int CPU_PANEL_HEIGHT = 230; // Height of CPU state panel
 #endif
 
 
@@ -48,6 +49,9 @@ static SDL_Gamepad* gamepad = nullptr;
 static SDL_AudioStream* audio_stream = nullptr;
 static SDL_AudioDeviceID audio_device = 0;
 static WindowLayout window_layout;
+static std::vector<uint8_t> loaded_rom;
+static std::string loaded_rom_path;
+static bool paused = false;
 
 WindowLayout compute_window_layout(int window_width, int window_height)
 {
@@ -245,12 +249,87 @@ void shutdown()
     SDL_Quit();
 }
 
+static void update_window_title()
+{
+    const char* model = gameboy.model_is_auto ? "auto" : (gameboy.requested_model == Model::DMG ? "DMG" : "CGB");
+    const char* running_as = !gameboy.cgb_mode ? "DMG" : (gameboy.dmg_compat ? "CGB (DMG compat)" : "CGB");
+    std::string title = std::format("gbemu - {} [{} -> {}]", loaded_rom_path, model, running_as);
+    SDL_SetWindowTitle(window, title.c_str());
+}
+
+static void reload_rom()
+{
+    gameboy.memory.save_battery(loaded_rom_path);
+    bool color_correction = gameboy.ppu.color_correction;
+    gameboy.load_rom(loaded_rom, loaded_rom_path);
+    gameboy.ppu.color_correction = color_correction;
+    gameboy.ppu.rebuild_palette_cache(gameboy.memory);
+    SDL_ClearAudioStream(audio_stream);
+    gameboy.running = true;
+    update_window_title();
+}
+
+#ifdef GBEMU_DEBUG
+// Emulator options shared by the hotkeys. Kept in one function so a future ImGui front-end can reuse it.
+static void draw_emulator_options()
+{
+    if (ImGui::Checkbox("Colour correction", &gameboy.ppu.color_correction))
+    {
+        gameboy.ppu.rebuild_palette_cache(gameboy.memory);
+    }
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80);
+    const char* models[] = { "auto", "DMG", "CGB" };
+    int current = gameboy.model_is_auto ? 0 : (gameboy.requested_model == Model::DMG ? 1 : 2);
+    if (ImGui::Combo("Model", &current, models, IM_ARRAYSIZE(models)))
+    {
+        gameboy.model_is_auto = (current == 0);
+        if (current != 0)
+        {
+            gameboy.requested_model = (current == 1) ? Model::DMG : Model::CGB;
+        }
+        reload_rom(); // the model only takes effect on a reload
+    }
+}
+#endif
+
 // Handle keyboard input for Game Boy joypad
 void handle_input(SDL_Event& event)
 {
     if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
         return;
     
+    if(event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
+    {
+        switch (event.key.key)
+        {
+            case SDLK_F1: paused = !paused; return;
+            case SDLK_F2: reload_rom(); return;
+            case SDLK_F3:
+                if (gameboy.model_is_auto)
+                {
+                    gameboy.model_is_auto = false;
+                    gameboy.requested_model = Model::DMG;
+                }
+                else if(gameboy.requested_model == Model::DMG)
+                {
+                    gameboy.requested_model = Model::CGB;
+                }
+                else
+                {
+                    gameboy.model_is_auto = true;
+                }
+                reload_rom(); 
+                return;
+            case SDLK_F4:
+                gameboy.ppu.color_correction = !gameboy.ppu.color_correction;
+                gameboy.ppu.rebuild_palette_cache(gameboy.memory);
+                return;
+        }
+    }
+
+
     bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
     uint8_t prev = gameboy.memory.joypad_state;
     uint8_t& joypad = gameboy.memory.joypad_state;
@@ -423,6 +502,8 @@ int main(int argc, char** argv)
         }
     }
 
+    loaded_rom = rom;
+    loaded_rom_path = rom_path;
     // Initialize Game Boy and load ROM
     gameboy.load_rom(rom, rom_path);
 
@@ -485,6 +566,7 @@ int main(int argc, char** argv)
     const int prefill_samples = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * 2; // stereo
     std::vector<int16_t> silence(prefill_samples, 0);
     SDL_PutAudioStreamData(audio_stream, silence.data(), silence.size() * sizeof(int16_t));
+    update_window_title();
 
     // Main loop
     bool quit = false;
@@ -553,15 +635,19 @@ int main(int argc, char** argv)
 
         }
         // Run one frame of emulation (~70224 cycles)
-        gameboy.step_frame();
-        
-        SDL_PutAudioStreamData(
-            audio_stream,
-            gameboy.apu.sample_buffer.data(),
-            gameboy.apu.sample_buffer.size() * sizeof(int16_t)
-        );
-        
-        gameboy.apu.sample_buffer.clear();
+        // A paused emulator neither runs nor queues audio; rendering and ImGui keep going
+        if (!paused)
+        {
+            gameboy.step_frame();
+
+            SDL_PutAudioStreamData(
+                audio_stream,
+                gameboy.apu.sample_buffer.data(),
+                gameboy.apu.sample_buffer.size() * sizeof(int16_t)
+            );
+
+            gameboy.apu.sample_buffer.clear();
+        }
         
         // Update screen texture if frame is ready
         if (gameboy.ppu.frame_ready)
@@ -611,6 +697,8 @@ int main(int argc, char** argv)
             get_flag(gameboy.cpu.af.low, FLAG_SUBTRACT),
             get_flag(gameboy.cpu.af.low, FLAG_HALF_CARRY),
             get_flag(gameboy.cpu.af.low, FLAG_CARRY));
+        ImGui::Separator();
+        draw_emulator_options();
         ImGui::End();
         
         // Memory viewer - fixed to the right
