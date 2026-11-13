@@ -39,8 +39,11 @@ int GameBoy::step()
 
 int GameBoy::step_frame()
 {
+    // A frame ends when the PPU enters V-Blank, so the buffer handed to the display is always one
+    // complete frame. The cycle budget only matters while the LCD is off and V-Blank never comes.
+    ppu.frame_ready = false;
     int cycles_executed = 0;
-    while (cycles_executed < CYCLES_PER_FRAME)
+    while (!ppu.frame_ready && cycles_executed < CYCLES_PER_FRAME)
     {
         // Apply scheduled IME enable (from previous EI) before checking interrupts
         if (cpu.ime_scheduled) {

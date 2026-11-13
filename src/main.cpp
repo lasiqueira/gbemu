@@ -7,6 +7,7 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 #include "gameboy.h"
 #include "disassembler.h"
 #include <SDL3/SDL.h>
@@ -562,8 +563,10 @@ int main(int argc, char** argv)
     }
 
     // After init(), before the main loop:
-    // Pre-fill with 2 frames of silence to establish audio buffer headroom
-    const int prefill_samples = static_cast<int>(AUDIO_SAMPLE_RATE / FRAME_RATE) * 2 * 2; // stereo
+    // Pre-fill the audio queue with silence so the device has headroom against frame-time jitter.
+    constexpr double AUDIO_TARGET_QUEUE_MS = 60.0;
+    constexpr int AUDIO_BYTES_PER_SECOND = AUDIO_SAMPLE_RATE * 2 * static_cast<int>(sizeof(int16_t)); // stereo, 16-bit
+    const int prefill_samples = static_cast<int>(AUDIO_BYTES_PER_SECOND * (AUDIO_TARGET_QUEUE_MS / 1000.0)) / static_cast<int>(sizeof(int16_t));
     std::vector<int16_t> silence(prefill_samples, 0);
     SDL_PutAudioStreamData(audio_stream, silence.data(), silence.size() * sizeof(int16_t));
     update_window_title();
@@ -800,7 +803,12 @@ int main(int argc, char** argv)
         
         SDL_RenderPresent(renderer);
 
-        next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(frame_duration);
+        // Pace on the audio queue: when it runs low, emulate slightly faster, when it fills up, slightly
+        // slower. A fixed timer drifts against the sound card and underruns the queue, which pops.
+        double queued_ms = SDL_GetAudioStreamQueued(audio_stream) * 1000.0 / AUDIO_BYTES_PER_SECOND;
+        double adjust_ms = std::clamp((queued_ms - AUDIO_TARGET_QUEUE_MS) * 0.05, -1.0, 1.0);
+        next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            frame_duration + std::chrono::duration<double, std::milli>(adjust_ms));
 
         auto now = std::chrono::steady_clock::now();
         if (next_frame < now)
