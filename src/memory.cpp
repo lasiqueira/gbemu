@@ -9,7 +9,7 @@
 static bool is_cgb_cart_only_register(uint16_t addr)
 {
     return addr == IO_KEY1 || addr == IO_VBK || (addr >= IO_HDMA1 && addr <= IO_HDMA5)
-        || addr == 0xFF56 /* RP */ || addr == IO_SVBK;
+        || addr == IO_RP || addr == IO_SVBK;
 }
 
 void Memory::load_rom(const std::vector<uint8_t>& rom_data)
@@ -167,7 +167,7 @@ uint8_t Memory::read(uint16_t addr) const
     // I/O Registers: $FF00-$FF7F
     if (addr < ADDR_HRAM_START)
     {
-        if(dmg_compat && is_cgb_cart_only_register(addr)) return 0xFF;
+        if (dmg_compat && is_cgb_cart_only_register(addr)) return 0xFF;
         // Joypad register (0xFF00)
         if (addr == IO_JOYPAD)
         {
@@ -211,47 +211,47 @@ uint8_t Memory::read(uint16_t addr) const
 
         if (addr == IO_VBK && cgb_mode) 
         {
-            return vram_bank | 0xFE;
+            return vram_bank | VBK_UNUSED_BITS;
         }
 
         if (addr == IO_SVBK && cgb_mode)
         {
-            return wram_bank | 0xF8; // Upper 5 bits always set
+            return wram_bank | SVBK_UNUSED_BITS;
         }
 
-        if(addr == IO_BGPI && cgb_mode)
+        if (addr == IO_BGPI && cgb_mode)
         {
-            return bcps | 0x40; // Upper bit always set
+            return bcps | CRAM_INDEX_UNUSED;
         }
 
-        if(addr == IO_OBPI && cgb_mode)
+        if (addr == IO_OBPI && cgb_mode)
         {
-            return ocps | 0x40; // Upper bit always set
+            return ocps | CRAM_INDEX_UNUSED;
         }
 
-        if(addr == IO_BGPD && cgb_mode)
+        if (addr == IO_BGPD && cgb_mode)
         {
-            return bg_palette_ram[bcps & 0x3F];
+            return bg_palette_ram[bcps & CRAM_INDEX_MASK];
         }
 
-        if(addr == IO_OBPD && cgb_mode)
+        if (addr == IO_OBPD && cgb_mode)
         {
-            return obj_palette_ram[ocps & 0x3F];
+            return obj_palette_ram[ocps & CRAM_INDEX_MASK];
         }
 
         if (addr == IO_KEY1 && cgb_mode)
         {
-            return (double_speed ? 0x80 : 0) | (key1_armed ? 1 : 0) | 0x7E;
+            return (double_speed ? KEY1_DOUBLE_SPEED : 0) | (key1_armed ? KEY1_ARMED : 0) | KEY1_UNUSED_BITS;
         }
 
         if (addr >= IO_HDMA1 && addr <= IO_HDMA4 && cgb_mode)
         {
-            return 0xFF; //write only
+            return 0xFF; // write only
         }
 
         if (addr == IO_HDMA5 && cgb_mode)
         {
-            return (hdma_active ? 0x00 : 0x80) | ((hdma_blocks_left -1) & 0x7F);
+            return (hdma_active ? 0 : HDMA5_INACTIVE_BIT) | ((hdma_blocks_left - 1) & HDMA_LENGTH_MASK);
         }
 
         return io[addr - ADDR_IO_START];
@@ -351,7 +351,7 @@ void Memory::write(uint16_t addr, uint8_t value)
     // VRAM: $8000-$9FFF
     if (addr < ADDR_EXT_RAM_START)
     {
-        vram[vram_bank * 0x2000 + (addr - ADDR_VRAM_START)] = value;
+        vram[vram_bank * VRAM_BANK_SIZE + (addr - ADDR_VRAM_START)] = value;
         return;
     }
     
@@ -406,7 +406,7 @@ void Memory::write(uint16_t addr, uint8_t value)
     // I/O Registers: $FF00-$FF7F
     if (addr < ADDR_HRAM_START)
     {
-        if(dmg_compat && is_cgb_cart_only_register(addr)) return;
+        if (dmg_compat && is_cgb_cart_only_register(addr)) return;
         
         // Joypad register (0xFF00) - only bits 4-5 are writable
         if (addr == IO_JOYPAD)
@@ -454,30 +454,30 @@ void Memory::write(uint16_t addr, uint8_t value)
         }
 
         // Audio Registers: 0xFF10 - 0xFF26
-        else if (addr >= 0xFF10 && addr <= 0xFF26)
+        else if (addr >= IO_NR10 && addr <= IO_NR52)
         {
-            io[addr - 0xFF00] = value; // Update the register file first
+            io[addr - ADDR_IO_START] = value; // Update the register file first
             if (apu) apu->on_register_write(addr, value); // Trigger APU logic
            
         }
 
         // Wave RAM: 0xFF30 - 0xFF3F
-        else if (addr >= 0xFF30 && addr <= 0xFF3F)
+        else if (addr >= IO_WAVE_RAM_START && addr <= IO_WAVE_RAM_END)
         {
-            io[addr - 0xFF00] = value;
-            if (apu) apu->on_wave_ram_write(addr - 0xFF30, value);
+            io[addr - ADDR_IO_START] = value;
+            if (apu) apu->on_wave_ram_write(addr - IO_WAVE_RAM_START, value);
         }
 
         // VRAM Bank register (0xFF4F) - only writable in CGB mode
         else if (addr == IO_VBK && cgb_mode) 
         {
-            vram_bank = value & 1;
+            vram_bank = value & VBK_BANK_MASK;
         }
 
         // WRAM Bank register (0xFF70) - only writable in CGB mode
         else if (addr == IO_SVBK && cgb_mode)
         {
-            wram_bank = value & 0x07;
+            wram_bank = value & SVBK_BANK_MASK;
             if (wram_bank == 0) wram_bank = 1; // Bank 0 is not switchable
         }
 
@@ -493,22 +493,22 @@ void Memory::write(uint16_t addr, uint8_t value)
 
         else if (addr == IO_BGPD && cgb_mode)
         {
-            uint8_t idx = bcps & 0x3F;
+            uint8_t idx = bcps & CRAM_INDEX_MASK;
             bg_palette_ram[idx] = value;
-            int colour =  idx >> 1;
-            uint16_t rgb555 = bg_palette_ram[colour * 2] | (bg_palette_ram[colour * 2 + 1] << 8);
+            int colour = idx / CRAM_COLOUR_BYTES;
+            uint16_t rgb555 = bg_palette_ram[colour * CRAM_COLOUR_BYTES] | (bg_palette_ram[colour * CRAM_COLOUR_BYTES + 1] << 8);
             gameboy->ppu.update_palette_color(false, colour, rgb555);
-            if (bcps & 0x80) bcps = 0x80 | ((idx + 1) & 0x3F);
+            if (bcps & CRAM_AUTO_INCREMENT) bcps = CRAM_AUTO_INCREMENT | ((idx + 1) & CRAM_INDEX_MASK);
         }
 
         else if (addr == IO_OBPD && cgb_mode)
         {
-            uint8_t idx = ocps & 0x3F;
+            uint8_t idx = ocps & CRAM_INDEX_MASK;
             obj_palette_ram[idx] = value;
-            int colour =  idx >> 1;
-            uint16_t rgb555 = obj_palette_ram[colour * 2] | (obj_palette_ram[colour * 2 + 1] << 8);
+            int colour = idx / CRAM_COLOUR_BYTES;
+            uint16_t rgb555 = obj_palette_ram[colour * CRAM_COLOUR_BYTES] | (obj_palette_ram[colour * CRAM_COLOUR_BYTES + 1] << 8);
             gameboy->ppu.update_palette_color(true, colour, rgb555);
-            if (ocps & 0x80) ocps = 0x80 | ((idx + 1) & 0x3F);
+            if (ocps & CRAM_AUTO_INCREMENT) ocps = CRAM_AUTO_INCREMENT | ((idx + 1) & CRAM_INDEX_MASK);
         }
         
         else if (addr == IO_HDMA1 && cgb_mode)
@@ -518,36 +518,36 @@ void Memory::write(uint16_t addr, uint8_t value)
         
         else if (addr == IO_HDMA2 && cgb_mode)
         {
-            hdma_source = (hdma_source & 0xFF00) | (value & 0xF0);
+            hdma_source = (hdma_source & 0xFF00) | (value & HDMA_ADDR_ALIGN_MASK);
         }
         
         else if (addr == IO_HDMA3 && cgb_mode)
         {
-            hdma_dest = (hdma_dest & 0x00FF) | ((value & 0x1F) << 8);
+            hdma_dest = (hdma_dest & 0x00FF) | ((value & HDMA_DEST_HIGH_MASK) << 8);
         }
         
         else if (addr == IO_HDMA4 && cgb_mode)
         {
-            hdma_dest = (hdma_dest & 0xFF00) | (value & 0xF0);
+            hdma_dest = (hdma_dest & 0xFF00) | (value & HDMA_ADDR_ALIGN_MASK);
         }
 
         else if (addr == IO_HDMA5 && cgb_mode)
         {
-            if (hdma_active && !(value & 0x80))
+            if (hdma_active && !(value & HDMA5_HBLANK_MODE))
             {
                 hdma_active = false; // cancel HBlank transfer
             }
             else
             {
-                hdma_blocks_left = (value & 0x7F) + 1;
-                hdma_active = (value & 0x80) != 0;
+                hdma_blocks_left = (value & HDMA_LENGTH_MASK) + 1;
+                hdma_active = (value & HDMA5_HBLANK_MODE) != 0;
                 gdma_requested = !hdma_active;
             }
         }
 
         else if (addr == IO_KEY1 && cgb_mode)
         {
-            key1_armed = value & 1; // bit 7 is read-only
+            key1_armed = value & KEY1_ARMED; // bit 7 is read-only
         }
         else
         {
@@ -754,19 +754,14 @@ void Memory::oam_bug(OamCorruption type)
     gameboy->ppu.corrupt_oam(*this, type);
 }
 
-bool is_oam_bug_range(uint16_t addr)
-{
-    return (addr & 0xFF00) == 0xFE00;
-}
-
 uint8_t Memory::read_vram_bank(uint16_t addr, uint8_t bank) const
 {
-    return vram[(bank * 0x2000) + (addr - ADDR_VRAM_START)];
+    return vram[(bank * VRAM_BANK_SIZE) + (addr - ADDR_VRAM_START)];
 }
 
 uint32_t Memory::wram_offset(uint16_t addr) const {
     // Echo RAM mirrors $C000-$DDFF, so fold it down first
-    if(addr >= 0xE000) addr -= 0x2000;
-    if(addr < 0xD000) return addr - 0xC000; // fixed bank 0
-    return wram_bank * 0x1000 + (addr - 0xD000); // banked
+    if (addr >= ADDR_ECHO_RAM_START) addr -= ECHO_RAM_OFFSET;
+    if (addr < ADDR_WRAM_BANKED_START) return addr - ADDR_WRAM_START; // fixed bank 0
+    return wram_bank * WRAM_BANK_SIZE + (addr - ADDR_WRAM_BANKED_START); // banked
 }

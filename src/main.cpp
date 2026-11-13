@@ -16,10 +16,15 @@
 #include "imgui_impl_sdlrenderer3.h"
 
 constexpr int DISPLAY_SCALE = 4; // 4x scaling for 160x144 screen
+constexpr Uint8 WINDOW_BACKGROUND_GREY = 20; // Colour behind the game screen and panels
 #ifdef GBEMU_DEBUG
 constexpr int DISASM_PANEL_WIDTH = 300; // Width of disassembly panel
 constexpr int MEMORY_PANEL_WIDTH = 500; // Width of memory viewer panel
 constexpr int CPU_PANEL_HEIGHT = 230; // Height of CPU state panel
+constexpr float MODEL_COMBO_WIDTH = 80.0f; // Width of the model combo box in the options row
+constexpr int MEMORY_BYTES_PER_ROW = 16; // Bytes shown per row in the memory viewer
+constexpr uint16_t MEMORY_ROW_MASK = 0xFFF0; // Rounds an address down to the start of its row
+constexpr ImU32 HIGHLIGHT_COLOUR = IM_COL32(255, 255, 0, 255); // Marks the byte/instruction at PC
 #endif
 
 
@@ -54,7 +59,7 @@ static std::vector<uint8_t> loaded_rom;
 static std::string loaded_rom_path;
 static bool paused = false;
 
-WindowLayout compute_window_layout(int window_width, int window_height)
+static WindowLayout compute_window_layout(int window_width, int window_height)
 {
     WindowLayout layout;
     layout.window_width = window_width;
@@ -77,11 +82,14 @@ WindowLayout compute_window_layout(int window_width, int window_height)
     float center_aspect = (float) layout.center_width / (float) layout.center_height;
 
     int scaled_w, scaled_h;
-    if (center_aspect > gb_aspect) {
+    if (center_aspect > gb_aspect)
+    {
         // wider than GB → pillarbox (bars on sides)
         scaled_h = layout.center_height;
         scaled_w = (int)(scaled_h * gb_aspect);
-    } else {
+    }
+    else
+    {
         // taller → letterbox (bars on top/bottom)
         scaled_w = layout.center_width;
         scaled_h = (int)(scaled_w / gb_aspect);
@@ -94,7 +102,7 @@ WindowLayout compute_window_layout(int window_width, int window_height)
     return layout;
 }
 
-int init()
+static int init()
 {   
         
     // Initialize SDL with video, gamepad, and audio support
@@ -215,7 +223,7 @@ int init()
 
     audio_stream = SDL_CreateAudioStream(&spec, &spec);
 
-    if(!audio_stream)
+    if (!audio_stream)
     {
         std::println(std::cerr, "Failed to create audio stream: {}", SDL_GetError());
         return 1;
@@ -228,7 +236,7 @@ int init()
 
 }
 
-void shutdown()
+static void shutdown()
 {
 
     ImGui_ImplSDLRenderer3_Shutdown();
@@ -280,7 +288,7 @@ static void draw_emulator_options()
     }
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(80);
+    ImGui::SetNextItemWidth(MODEL_COMBO_WIDTH);
     const char* models[] = { "auto", "DMG", "CGB" };
     int current = gameboy.model_is_auto ? 0 : (gameboy.requested_model == Model::DMG ? 1 : 2);
     if (ImGui::Combo("Model", &current, models, IM_ARRAYSIZE(models)))
@@ -295,13 +303,28 @@ static void draw_emulator_options()
 }
 #endif
 
+// Updates one joypad button (active low: 0 = pressed) and raises the joypad interrupt on a press.
+// A mask of 0 means the input isn't mapped to any button and does nothing.
+static void set_joypad_button(uint8_t button, bool pressed)
+{
+    uint8_t& joypad = gameboy.memory.joypad_state;
+    uint8_t prev = joypad;
+    if (pressed) joypad &= ~button; else joypad |= button;
+
+    // Raise joypad interrupt if any button transitioned to pressed (1->0)
+    if (prev & ~joypad)
+    {
+        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD;
+    }
+}
+
 // Handle keyboard input for Game Boy joypad
-void handle_input(SDL_Event& event)
+static void handle_input(SDL_Event& event)
 {
     if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
         return;
     
-    if(event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
     {
         switch (event.key.key)
         {
@@ -313,7 +336,7 @@ void handle_input(SDL_Event& event)
                     gameboy.model_is_auto = false;
                     gameboy.requested_model = Model::DMG;
                 }
-                else if(gameboy.requested_model == Model::DMG)
+                else if (gameboy.requested_model == Model::DMG)
                 {
                     gameboy.requested_model = Model::CGB;
                 }
@@ -332,94 +355,44 @@ void handle_input(SDL_Event& event)
 
 
     bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
-    uint8_t prev = gameboy.memory.joypad_state;
-    uint8_t& joypad = gameboy.memory.joypad_state;
 
-    // Joypad state: bit 0 = pressed, 1 = released
-    // Bits 0-3: A, B, Select, Start
-    // Bits 4-7: Right, Left, Up, Down
+    uint8_t button = 0;
     switch (event.key.key)
     {
-        case SDLK_Z:      // A button
-            if (pressed) joypad &= ~0x01; else joypad |= 0x01;
-            break;
-        case SDLK_X:      // B button
-            if (pressed) joypad &= ~0x02; else joypad |= 0x02;
-            break;
-        case SDLK_RSHIFT: // Select
-        case SDLK_LSHIFT:
-            if (pressed) joypad &= ~0x04; else joypad |= 0x04;
-            break;
-        case SDLK_RETURN: // Start
-            if (pressed) joypad &= ~0x08; else joypad |= 0x08;
-            break;
-        case SDLK_RIGHT:  // Right
-            if (pressed) joypad &= ~0x10; else joypad |= 0x10;
-            break;
-        case SDLK_LEFT:   // Left
-            if (pressed) joypad &= ~0x20; else joypad |= 0x20;
-            break;
-        case SDLK_UP:     // Up
-            if (pressed) joypad &= ~0x40; else joypad |= 0x40;
-            break;
-        case SDLK_DOWN:   // Down
-            if (pressed) joypad &= ~0x80; else joypad |= 0x80;
-            break;
+        case SDLK_Z:      button = JOYPAD_A; break;
+        case SDLK_X:      button = JOYPAD_B; break;
+        case SDLK_RSHIFT:
+        case SDLK_LSHIFT: button = JOYPAD_SELECT; break;
+        case SDLK_RETURN: button = JOYPAD_START; break;
+        case SDLK_RIGHT:  button = JOYPAD_RIGHT; break;
+        case SDLK_LEFT:   button = JOYPAD_LEFT; break;
+        case SDLK_UP:     button = JOYPAD_UP; break;
+        case SDLK_DOWN:   button = JOYPAD_DOWN; break;
     }
-
-    // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad)
-    {
-        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
-    }
+    set_joypad_button(button, pressed);
 }
 
-void handle_gamepad_input(SDL_Event& event)
+static void handle_gamepad_input(SDL_Event& event)
 {
     if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.type != SDL_EVENT_GAMEPAD_BUTTON_UP)
         return;
     
     bool pressed = (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
-    uint8_t prev = gameboy.memory.joypad_state;
-    uint8_t& joypad = gameboy.memory.joypad_state;
 
     // Map gamepad buttons to Game Boy buttons
-    // Joypad state: bit 0 = pressed (active low)
-    // Bits 0-3: A, B, Select, Start
-    // Bits 4-7: Right, Left, Up, Down
+    uint8_t button = 0;
     switch (event.gbutton.button)
     {
-        case SDL_GAMEPAD_BUTTON_SOUTH:  // A button (Xbox: A, PS: X, Switch: B)
-            if (pressed) joypad &= ~0x01; else joypad |= 0x01;
-            break;
-        case SDL_GAMEPAD_BUTTON_EAST:   // B button (Xbox: B, PS: Circle, Switch: A)
-            if (pressed) joypad &= ~0x02; else joypad |= 0x02;
-            break;
-        case SDL_GAMEPAD_BUTTON_BACK:   // Select (Xbox: Back/View, PS: Share, Switch: Minus)
-            if (pressed) joypad &= ~0x04; else joypad |= 0x04;
-            break;
-        case SDL_GAMEPAD_BUTTON_START:  // Start (Xbox: Start/Menu, PS: Options, Switch: Plus)
-            if (pressed) joypad &= ~0x08; else joypad |= 0x08;
-            break;
-        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-            if (pressed) joypad &= ~0x10; else joypad |= 0x10;
-            break;
-        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-            if (pressed) joypad &= ~0x20; else joypad |= 0x20;
-            break;
-        case SDL_GAMEPAD_BUTTON_DPAD_UP:
-            if (pressed) joypad &= ~0x40; else joypad |= 0x40;
-            break;
-        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
-            if (pressed) joypad &= ~0x80; else joypad |= 0x80;
-            break;
+        case SDL_GAMEPAD_BUTTON_SOUTH:      button = JOYPAD_A; break;      // Xbox: A, PS: X, Switch: B
+        case SDL_GAMEPAD_BUTTON_EAST:       button = JOYPAD_B; break;      // Xbox: B, PS: Circle, Switch: A
+        case SDL_GAMEPAD_BUTTON_BACK:       button = JOYPAD_SELECT; break; // Xbox: Back/View, PS: Share, Switch: Minus
+        case SDL_GAMEPAD_BUTTON_START:      button = JOYPAD_START; break;  // Xbox: Start/Menu, PS: Options, Switch: Plus
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: button = JOYPAD_RIGHT; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  button = JOYPAD_LEFT; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:    button = JOYPAD_UP; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:  button = JOYPAD_DOWN; break;
     }
-
-    // Raise joypad interrupt if any button transitioned to pressed (1->0)
-    if (prev & ~joypad)
-    {
-        gameboy.memory.io[IO_IF - ADDR_IO_START] |= INT_JOYPAD; // Set INT_JOYPAD in IF (0xFF0F)
-    }
+    set_joypad_button(button, pressed);
 }
 
 int main(int argc, char** argv)
@@ -555,7 +528,7 @@ int main(int argc, char** argv)
         return 0;
     }
     
-    if(init() != 0)
+    if (init() != 0)
     {
         std::println(std::cerr, "Failed to initialize SDL or ImGui.");
         shutdown();
@@ -575,7 +548,7 @@ int main(int argc, char** argv)
     bool quit = false;
     gameboy.running = true;
     
-    // Frame timing for 60 FPS
+    // Frame timing, paced to the Game Boy's ~59.7 FPS
     auto next_frame = std::chrono::steady_clock::now();
     const auto frame_duration = std::chrono::duration<double>(1.0 / FRAME_RATE);
     while (!quit && gameboy.running)
@@ -716,14 +689,14 @@ int main(int argc, char** argv)
         float line_h = ImGui::GetTextLineHeightWithSpacing();
         int visible_rows = std::max(4, (int)(ImGui::GetContentRegionAvail().y / line_h));
         int half = visible_rows / 2;
-        uint16_t start_addr = (gameboy.cpu.pc & 0xFFF0);
+        uint16_t start_addr = (gameboy.cpu.pc & MEMORY_ROW_MASK);
         for (int row = -half; row < half; row++)
         {
-            uint16_t addr = start_addr + (row * 16);
+            uint16_t addr = start_addr + (row * MEMORY_BYTES_PER_ROW);
             ImGui::Text("%04X:", addr);
             ImGui::SameLine();
             
-            for (int col = 0; col < 16; col++)
+            for (int col = 0; col < MEMORY_BYTES_PER_ROW; col++)
             {
                 uint16_t byte_addr = addr + col;
                 uint8_t byte = gameboy.memory.read(byte_addr);
@@ -733,7 +706,7 @@ int main(int argc, char** argv)
                 {
                     ImVec2 pos = ImGui::GetCursorScreenPos();
                     ImVec2 size = ImGui::CalcTextSize("FF");
-                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), HIGHLIGHT_COLOUR);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
                     ImGui::Text("%02X", byte);
                     ImGui::PopStyleColor();
@@ -743,7 +716,7 @@ int main(int argc, char** argv)
                     ImGui::Text("%02X", byte);
                 }
                 
-                if (col < 15) ImGui::SameLine();
+                if (col < MEMORY_BYTES_PER_ROW - 1) ImGui::SameLine();
             }
         }
         ImGui::EndChild();
@@ -774,11 +747,11 @@ int main(int argc, char** argv)
             {
                 ImVec2 pos = ImGui::GetCursorScreenPos();
                 ImVec2 size = ImGui::CalcTextSize(line.c_str());
-                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(255, 255, 0, 255));
+                ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), HIGHLIGHT_COLOUR);
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             }
             ImGui::TextUnformatted(line.c_str());
-            if(is_current)
+            if (is_current)
             {
                 ImGui::PopStyleColor();
                 ImGui::SetScrollHereY(1.0f);
@@ -791,7 +764,7 @@ int main(int argc, char** argv)
         
         // Render
         ImGui::Render();
-        SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
+        SDL_SetRenderDrawColor(renderer, WINDOW_BACKGROUND_GREY, WINDOW_BACKGROUND_GREY, WINDOW_BACKGROUND_GREY, SDL_ALPHA_OPAQUE);
         SDL_RenderClear(renderer);
         
         // Render Game Boy screen in top-left corner

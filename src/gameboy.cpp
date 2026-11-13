@@ -1,6 +1,6 @@
 #include "gameboy.h"
-#include <cstring>
 #include "compat_palettes.h"
+#include <cstring>
 
 void GameBoy::reset()
 {
@@ -196,7 +196,7 @@ void GameBoy::on_memory_cycle(int cycles)
 
 void GameBoy::set_cartridge_mode()
 {
-    bool cart_is_cgb = (memory.cgb_flag == 0x80 || memory.cgb_flag == 0xC0);
+    bool cart_is_cgb = (memory.cgb_flag == CGB_FLAG_ENHANCED || memory.cgb_flag == CGB_FLAG_ONLY);
     model = model_is_auto ? (cart_is_cgb ? Model::CGB : Model::DMG) : requested_model;
     cgb_mode = (model == Model::CGB);
     ppu.cgb_mode = cgb_mode;
@@ -208,12 +208,12 @@ void GameBoy::set_cartridge_mode()
 }
 
 // Writes 4 RGB555 colours into one palette of a CRAM bank (little-endian, 8 bytes per palette).
-static void write_cram_palette(uint8_t* cram, int palette, const uint16_t (&colours) [4])
+static void write_cram_palette(uint8_t* cram, int palette, const uint16_t (&colours)[COLOURS_PER_PALETTE])
 {
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < COLOURS_PER_PALETTE; ++i)
     {
-        cram[palette * 8 + i * 2] = colours[i] & 0xFF;
-        cram[palette * 8 + i * 2 + 1] = colours[i] >> 8;
+        cram[palette * CRAM_PALETTE_BYTES + i * CRAM_COLOUR_BYTES] = colours[i] & 0xFF;
+        cram[palette * CRAM_PALETTE_BYTES + i * CRAM_COLOUR_BYTES + 1] = colours[i] >> 8;
     }
 }
 
@@ -234,29 +234,29 @@ void GameBoy::apply_post_boot_state()
     memory.write(IO_WX, 0x00);
     memory.write(IO_IF, 0x00);
 
-    if(cgb_mode)
+    if (cgb_mode)
     {
-        cpu.af.pair = 0x1180;
-        cpu.bc.pair = 0x0000;
-        cpu.de.pair = 0xFF56;
-        cpu.hl.pair = 0x000D;
+        cpu.af.pair = POST_BOOT_AF_CGB;
+        cpu.bc.pair = POST_BOOT_BC_CGB;
+        cpu.de.pair = POST_BOOT_DE_CGB;
+        cpu.hl.pair = POST_BOOT_HL_CGB;
 
-        memory.write_io_raw(IO_SVBK, 0xF8); // WRAM bank 1
-        memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
-        memory.write_io_raw(IO_OPRI, dmg_compat ? 0x01 : 0x00); // CGB (OAM-order) object priority
-        for (int i = 0; i < 16; ++i) // CGB boot ROM leaves wave RAM as 00 FF 00 FF ...
+        memory.write_io_raw(IO_SVBK, SVBK_UNUSED_BITS); // WRAM bank 1
+        memory.write_io_raw(IO_KEY1, KEY1_UNUSED_BITS); // Normal speed, switch not armed
+        memory.write_io_raw(IO_OPRI, dmg_compat ? OPRI_DMG_PRIORITY : 0x00); // CGB (OAM-order) object priority
+        for (size_t i = 0; i < sizeof(apu.wave_ram); ++i) // CGB boot ROM leaves wave RAM as 00 FF 00 FF ...
             apu.wave_ram[i] = (i & 1) ? 0xFF : 0x00;
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
-        if(dmg_compat)
+        if (dmg_compat)
         {
             CompatPalettes p = pick_compat_palettes(memory.rom);
             write_cram_palette(memory.bg_palette_ram, 0, p.bg);
             write_cram_palette(memory.obj_palette_ram, 0, p.obj0);
             write_cram_palette(memory.obj_palette_ram, 1, p.obj1);
 
-            cpu.bc.pair = static_cast<uint16_t>(p.checksum) << 8; // B - checksum, C = 0;
-            cpu.de.pair = 0x0008;
-            cpu.hl.pair = (p.checksum == 0x43 || p.checksum == 0x58) ? 0x991A : 0x007C;
+            cpu.bc.pair = static_cast<uint16_t>(p.checksum) << 8; // B = checksum, C = 0
+            cpu.de.pair = POST_BOOT_DE_CGB_COMPAT;
+            cpu.hl.pair = p.logo_tilemap ? POST_BOOT_HL_CGB_COMPAT_LOGO : POST_BOOT_HL_CGB_COMPAT;
         }
         ppu.rebuild_palette_cache(memory);
     }
@@ -269,29 +269,29 @@ int GameBoy::try_speed_switch()
     memory.key1_armed = false;
     memory.div_counter = 0;
     memory.write_io_raw(IO_DIV, 0);
-    for (int i = 0; i < 2050; ++i) // ~8200 real-time T-cycles
+    for (int i = 0; i < SPEED_SWITCH_STALL_CYCLES / 4; ++i)
     {
         ppu.step(4, memory);
         apu.step(4, 0, memory); // cpu_cycles = 0: DIV is frozen
     }
 
-    return 8200; // real-time cycles spent in the stall
+    return SPEED_SWITCH_STALL_CYCLES; // real-time cycles spent in the stall
 }
 
 int GameBoy::hdma_copy_block()
 {
-    for (int i = 0; i < 0x10; ++i)
+    for (int i = 0; i < HDMA_BLOCK_SIZE; ++i)
     {
         uint8_t value = memory.read(memory.hdma_source + i);
-        memory.vram[memory.vram_bank * 0x2000 + memory.hdma_dest + i] = value;
+        memory.vram[memory.vram_bank * VRAM_BANK_SIZE + memory.hdma_dest + i] = value;
     }
-    memory.hdma_source += 0x10;
-    memory.hdma_dest += 0x10;
+    memory.hdma_source += HDMA_BLOCK_SIZE;
+    memory.hdma_dest += HDMA_BLOCK_SIZE;
     memory.hdma_blocks_left--;
 
-    if (memory.hdma_dest >= 0x2000) // destination ran past $9FFF: the transfer stops early
+    if (memory.hdma_dest >= VRAM_BANK_SIZE) // destination ran past $9FFF: the transfer stops early
     {
-        memory.hdma_dest &= 0x1FF0;
+        memory.hdma_dest &= (VRAM_BANK_SIZE - 1) & ~(HDMA_BLOCK_SIZE - 1);
         memory.hdma_blocks_left = 0;
     }
 

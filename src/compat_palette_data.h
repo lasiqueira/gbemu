@@ -15,11 +15,12 @@
 // This file contains data only. The lookup algorithm lives in compat_palettes.cpp.
 namespace compat_palette_data
 {
-// Title checksums. Entries [0, kFirstAmbiguous) identify one game each (the index is the
-// palette ID). Entries from kFirstAmbiguous on are shared by several games and are
-// disambiguated by the 4th title letter (see kFourthLetters). Index 0 is the "default" entry.
-constexpr int kFirstAmbiguous = 65;
-constexpr uint8_t kTitleChecksums[79] = {
+// Title checksums. Entries [0, FIRST_AMBIGUOUS_CHECKSUM) identify one game each (the index is the
+// palette ID). Entries from FIRST_AMBIGUOUS_CHECKSUM on are shared by several games and are
+// disambiguated by the 4th title letter (see FOURTH_LETTERS). Index 0 is the "default" entry.
+constexpr int FIRST_AMBIGUOUS_CHECKSUM = 65;
+constexpr int TITLE_CHECKSUM_COUNT = 79;
+constexpr uint8_t TITLE_CHECKSUMS[TITLE_CHECKSUM_COUNT] = {
     0x00, 0x88, 0x16, 0x36, 0xD1, 0xDB, 0xF2, 0x3C, 0x8C, 0x92, 0x3D, 0x5C, 0x58, 0xC9, 0x3E, 0x70,
     0x1D, 0x59, 0x69, 0x19, 0x35, 0xA8, 0x14, 0xAA, 0x75, 0x95, 0x99, 0x34, 0x6F, 0x15, 0xFF, 0x97,
     0x4B, 0x90, 0x17, 0x10, 0x39, 0xF7, 0xF6, 0xA2, 0x49, 0x4E, 0x43, 0x68, 0xE0, 0x8B, 0xF0, 0xCE,
@@ -27,19 +28,20 @@ constexpr uint8_t kTitleChecksums[79] = {
     0x6B, 0xB3, 0x46, 0x28, 0xA5, 0xC6, 0xD3, 0x27, 0x61, 0x18, 0x66, 0x6A, 0xBF, 0x0D, 0xF4,
 };
 
-// 4th title letter, laid out as rows of kFourthLetterRowLength. A letter in column c, row r
-// gives palette ID kFirstAmbiguous + c + kFourthLetterRowLength * r, where c is the index of
-// the matching checksum minus kFirstAmbiguous. Letter not found -> palette ID 0.
-constexpr int kFourthLetterRowLength = 14;
-constexpr char kFourthLetters[29] = {
+// 4th title letter, laid out as rows of FOURTH_LETTER_ROW_LENGTH. A letter in column c, row r
+// gives palette ID FIRST_AMBIGUOUS_CHECKSUM + c + FOURTH_LETTER_ROW_LENGTH * r, where c is the
+// index of the matching checksum minus FIRST_AMBIGUOUS_CHECKSUM. Letter not found -> palette ID 0.
+constexpr int FOURTH_LETTER_ROW_LENGTH = 14;
+constexpr int FOURTH_LETTER_COUNT = 29;
+constexpr char FOURTH_LETTERS[FOURTH_LETTER_COUNT] = {
     'B', 'E', 'F', 'A', 'A', 'R', 'B', 'E', 'K', 'E', 'K', ' ', 'R', '-', 'U', 'R', 'A', 'R', ' ', 'I', 'N', 'A', 'I', 'L', 'I', 'C', 'E', ' ', 'R',
 };
 
 // Titles with these checksums also need the Nintendo logo tilemap in VRAM.
-constexpr uint8_t kLogoTilemapChecksums[2] = { 0x58, 0x43 };
+constexpr uint8_t LOGO_TILEMAP_CHECKSUMS[2] = { 0x58, 0x43 };
 
 // Palette ID -> where each of the three palettes starts. Each value is an offset, in colours,
-// into kPaletteColours; the palette is the 4 colours starting there. The offsets are NOT always
+// into PALETTE_COLOURS; the palette is the 4 colours starting there. The offsets are NOT always
 // multiples of 4: the boot ROM's palettes overlap, so some games start in the middle of one.
 struct PaletteSet
 {
@@ -47,7 +49,8 @@ struct PaletteSet
     uint8_t obj1;
     uint8_t bg;
 };
-constexpr PaletteSet kPaletteSets[94] = {
+constexpr int PALETTE_ID_COUNT = 94;
+constexpr PaletteSet PALETTE_SETS[PALETTE_ID_COUNT] = {
     {  16,  16, 116 }, // 0
     {  36,  36,  36 }, // 1
     {   0,   0,   0 }, // 2
@@ -145,7 +148,8 @@ constexpr PaletteSet kPaletteSets[94] = {
 };
 
 // RGB555 colours: 30 palettes of 4 laid end to end (lightest to darkest within a palette).
-constexpr uint16_t kPaletteColours[120] = {
+constexpr int PALETTE_COLOUR_COUNT = 120;
+constexpr uint16_t PALETTE_COLOURS[PALETTE_COLOUR_COUNT] = {
     0x7FFF, 0x32BF, 0x00D0, 0x0000, // 0
     0x639F, 0x4279, 0x15B0, 0x04CB, // 1
     0x7FFF, 0x6E31, 0x454A, 0x0000, // 2

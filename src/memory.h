@@ -51,8 +51,8 @@ struct Memory {
     uint8_t io[0x80]      = {}; // $FF00-$FF7F: I/O Registers
     uint8_t hram[0x7F]    = {}; // $FF80-$FFFE: High RAM
     uint8_t ie_register = 0;  // $FFFF: Interrupt Enable
-    uint8_t bg_palette_ram[64] = {}; // CGB BG CRAM: 8 palettes x 4 colours x 2 bytes
-    uint8_t obj_palette_ram[64] = {}; // CGB OBJ CRAM: 8 palettes x 4 colours x 2 bytes
+    uint8_t bg_palette_ram[CRAM_SIZE] = {}; // CGB BG CRAM: 8 palettes x 4 colours x 2 bytes
+    uint8_t obj_palette_ram[CRAM_SIZE] = {}; // CGB OBJ CRAM: 8 palettes x 4 colours x 2 bytes
     uint8_t bcps = 0;   // $FF68
     uint8_t ocps = 0;   // $FF6A
     
@@ -137,4 +137,9 @@ struct Memory {
     uint32_t wram_offset(uint16_t addr) const;
 };
 
-bool is_oam_bug_range(uint16_t addr);
+// True for $FE00-$FEFF (OAM and the unusable area behind it), where an access or an IDU operation
+// on the register can trigger the DMG OAM corruption bug. Inline: it runs on every CPU bus access.
+inline bool is_oam_bug_range(uint16_t addr)
+{
+    return (addr & 0xFF00) == OAM_BASE;
+}

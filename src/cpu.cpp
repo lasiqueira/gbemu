@@ -11,10 +11,10 @@ CPU::CPU()
     sp = CPU_INITIAL_SP; // Initial stack pointer value
     
     // Post-boot register values
-    af.pair = 0x01B0; // A=0x01, F=0xB0 (Z=1, N=0, H=1, C=1)
-    bc.pair = 0x0013; // B=0x00, C=0x13
-    de.pair = 0x00D8; // D=0x00, E=0xD8
-    hl.pair = 0x014D; // H=0x01, L=0x4D
+    af.pair = POST_BOOT_AF_DMG; // A=0x01, F=0xB0 (Z=1, N=0, H=1, C=1)
+    bc.pair = POST_BOOT_BC_DMG; // B=0x00, C=0x13
+    de.pair = POST_BOOT_DE_DMG; // D=0x00, E=0xD8
+    hl.pair = POST_BOOT_HL_DMG; // H=0x01, L=0x4D
 }
 
 void CPU::print_state()
@@ -202,7 +202,7 @@ int CPU::inc_r(uint8_t& reg)
 
 int CPU::call_a16(Memory& memory, uint16_t addr, bool condition)
 {
-    if(condition)
+    if (condition)
     {
         if (is_oam_bug_range(sp))
         {
@@ -630,7 +630,7 @@ int CPU::ccf()
 int CPU::halt(Memory& memory)
 {
     uint8_t pending = memory.read_io_raw(IO_IF) & memory.ie_register & INT_ALL_MASK;
-    if(!ime && pending)
+    if (!ime && pending)
     {
         halt_bug = true; // Trigger HALT bug if IME is disabled and there's a pending interrupt
     }
@@ -961,7 +961,7 @@ int CPU::execute_instruction(Memory& memory)
     // Console printing disabled for performance
     instructions_executed++;
     pc_history.push_back(pc);
-    if(pc_history.size() > 200)
+    if (pc_history.size() > 200)
     {
         pc_history.pop_front();
     }
@@ -1234,7 +1234,7 @@ int CPU::execute_instruction(Memory& memory)
             unimplemented_instruction(opcode, memory.rom);
             return -1; // Indicate error for unimplemented instruction
     } }();
-    if(halt_bug)
+    if (halt_bug)
     {
         pc = pc_before; // Don't advance PC if halt bug is active
         halt_bug = false; // Clear halt bug after it has taken effect

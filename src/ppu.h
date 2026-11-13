@@ -1,4 +1,5 @@
 #pragma once
+#include "constants.h"
 #include <cstdint>
 #include <array>
 
@@ -44,8 +45,21 @@ constexpr uint8_t SPRITE_PRIORITY = 0x80; // Bit 7: Sprite-to-background priorit
 constexpr uint8_t SPRITE_FLIP_Y = 0x40;   // Bit 6: Y flip
 constexpr uint8_t SPRITE_FLIP_X = 0x20;   // Bit 5: X flip
 constexpr uint8_t SPRITE_PALETTE = 0x10;   // Bit 4: Palette number (0=OBP0, 1=OBP1)
+constexpr int SPRITE_HEIGHT_NORMAL = 8;   // LCDC bit 2 clear
+constexpr int SPRITE_HEIGHT_TALL = 16;    // LCDC bit 2 set
+
+// CGB attribute bits. Tile attributes (BG map bank 1) and sprite attributes share the palette,
+// bank and flip layout, apart from sprite bit 4 (DMG palette) and bit 7 (priority).
+constexpr uint8_t CGB_ATTR_PALETTE_MASK = 0x07; // Bits 0-2: CGB palette number
+constexpr uint8_t CGB_ATTR_VRAM_BANK    = 0x08; // Bit 3: tile data VRAM bank
+constexpr uint8_t BG_ATTR_FLIP_X        = 0x20; // Bit 5: horizontal flip
+constexpr uint8_t BG_ATTR_FLIP_Y        = 0x40; // Bit 6: vertical flip
+constexpr uint8_t BG_ATTR_PRIORITY      = 0x80; // Bit 7: BG-to-OBJ priority
+constexpr uint8_t OPRI_DMG_PRIORITY     = 0x01; // OPRI bit 0: 1 = DMG-style (X coordinate) object priority
 
 // Background and tile rendering
+constexpr int TILE_SIZE_PX = 8; // Tiles are 8x8 pixels
+constexpr int SIGNED_TILE_ID_BIAS = 128; // Signed tile IDs in the $8800 method are offset by 128 from the base
 constexpr int TILE_MAP_COLS = 32; // Tile map width in tiles
 constexpr int BYTES_PER_TILE = 16; // Each tile is 16 bytes (8x8 pixels, 2 bits per pixel)
 constexpr uint8_t WINDOW_X_OFFSET = 7; // Window X position is offset by 7 pixels
@@ -138,8 +152,8 @@ struct PPU
     std::array<Sprite, MAX_SPRITES_PER_LINE> visible_sprites = {}; // Sprites visible on the current scanline
     std::array<SpritePixel, SCREEN_WIDTH> sprite_line = {};
 
-    std::array<uint32_t, 32> bg_palette_rgba = {};   // 8 palettes x 4 colours
-    std::array<uint32_t, 32> obj_palette_rgba = {};
+    std::array<uint32_t, CRAM_COLOURS> bg_palette_rgba = {};   // 8 palettes x 4 colours
+    std::array<uint32_t, CRAM_COLOURS> obj_palette_rgba = {};
     bool color_correction = true;
 
     PPUMode mode = PPUMode::OAMSearch;
@@ -183,12 +197,3 @@ struct PPU
     void update_palette_color(bool obj, int colour, uint16_t rgb555);  // colour = 0..31
     void rebuild_palette_cache(const Memory& memory);                  // all 64 entries   
 };
-
-// oam corruption helpers
-uint16_t oam_word(const Memory& memory, int row, int word);
-void set_oam_word(Memory& memory, int row, int word, uint16_t value);
-void copy_oam_tail(Memory& memory, int dst, int src);
-void copy_oam_row(Memory& memory, int dst, int src);
-void write_corruption(Memory& memory, int row);
-void read_corruption(Memory& memory, int row);
-void read_incdec_corruption(Memory& memory, int row);

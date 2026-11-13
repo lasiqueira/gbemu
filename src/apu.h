@@ -8,6 +8,20 @@ constexpr int APU_PERIOD_MAX = 2048; // Max period value for square/wave channel
 constexpr int AUDIO_SAMPLE_SCALING = 68; // max per side is 4 ch × 15 vol × 8 NR50 = 480
 constexpr uint16_t APU_LFSR_INIT = 0x7FFF; // Initial value for 15-bit LFSR in noise channel
 constexpr uint8_t SWEEP_TIMER_DEFAULT = 8;
+constexpr int LENGTH_MAX = 64;       // Length counter range for the pulse and noise channels
+constexpr int LENGTH_MAX_WAVE = 256; // Length counter range for the wave channel
+constexpr uint16_t PERIOD_HIGH_MASK = 0x0700; // Period bits 8-10 (NRx4 bits 0-2)
+constexpr uint16_t PERIOD_LOW_MASK = 0x00FF;  // Period bits 0-7 (NRx3)
+constexpr uint8_t NRX4_PERIOD_HIGH_BITS = 0x07;
+constexpr int ENVELOPE_VOLUME_MAX = 15;
+constexpr int WAVE_RAM_SIZE = 16;     // 16 bytes = 32 four-bit samples
+constexpr int WAVE_SAMPLE_COUNT = 32;
+constexpr uint8_t NR43_LFSR_WIDTH_BIT = 0x08; // Set = 7-bit LFSR
+constexpr int LFSR_WIDTH_SHORT = 7;
+constexpr int LFSR_WIDTH_LONG = 15;
+constexpr int LFSR_FEED_BIT = LFSR_WIDTH_LONG - 1; // New bit is shifted in at the top of the 15-bit register
+constexpr uint16_t FRAME_SEQ_DIV_BIT = 0x1000;        // DIV bit 12 falling edge clocks the 512 Hz frame sequencer
+constexpr uint16_t FRAME_SEQ_DIV_BIT_DOUBLE = 0x2000; // One bit higher in double speed, since DIV runs twice as fast
 
 // I/O AUDIO Register Addresses
 constexpr uint16_t IO_NR10   = 0xFF10; // Channel 1 Sweep
@@ -123,7 +137,7 @@ struct APU
     WaveChannel channel3; // Wave output
     NoiseChannel channel4; // Noise generator
     
-    uint8_t wave_ram[16] = {};
+    uint8_t wave_ram[WAVE_RAM_SIZE] = {};
 
     bool cgb_mode = false;
 

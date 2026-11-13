@@ -10,7 +10,7 @@ void PPU::step(int cycles, Memory& memory)
     // If LCD is disabled, reset PPU state and output white screen
     if (!(lcdc & LCDC_ENABLE))
     {
-        if(!lcd_off)
+        if (!lcd_off)
         {
             lcd_off = true;
             mode = PPUMode::OAMSearch;
@@ -24,7 +24,7 @@ void PPU::step(int cycles, Memory& memory)
         return;
     }
     
-    if(lcd_off)
+    if (lcd_off)
     {
         lcd_off = false;
         mode = PPUMode::OAMSearch;
@@ -136,19 +136,19 @@ void PPU::render_scanline(Memory& memory)
     int cached_tile_x = -1;
     bool cached_was_window = false;
 
-    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
+    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? SPRITE_HEIGHT_TALL : SPRITE_HEIGHT_NORMAL;
     for (int i = 0; i < visible_sprite_count; i++)
     {
         const Sprite& sprite = visible_sprites[i];
         int left = sprite.x - SPRITE_X_OFFSET;
         uint8_t palette = (sprite.attributes & SPRITE_PALETTE) ? memory.read_io_raw(IO_OBP1) : memory.read_io_raw(IO_OBP0);
         TileBytes row = fetch_sprite_row(sprite, sprite_height, memory);
-        for (int px = std::max(0, left); px < std::min(SCREEN_WIDTH, left + 8); px++)
+        for (int px = std::max(0, left); px < std::min(SCREEN_WIDTH, left + TILE_SIZE_PX); px++)
         {
             if (sprite_line[px].present) continue;
             int pixel_x = px - left;
-            if (sprite.attributes & SPRITE_FLIP_X) pixel_x = 7 - pixel_x;
-            int bit_pos = 7 - pixel_x;
+            if (sprite.attributes & SPRITE_FLIP_X) pixel_x = (TILE_SIZE_PX - 1) - pixel_x;
+            int bit_pos = (TILE_SIZE_PX - 1) - pixel_x;
             uint8_t color_id = ((row.byte2 >> bit_pos) & 1) << 1 | ((row.byte1 >> bit_pos) & 1);
             if (color_id == 0) continue;
             
@@ -156,9 +156,9 @@ void PPU::render_scanline(Memory& memory)
             if (!cgb_mode)
                 rgba = GB_PALETTE_RGBA32[(palette >> (color_id * 2)) & 3];
             else if (dmg_compat)
-                rgba = obj_palette_rgba[((sprite.attributes & SPRITE_PALETTE) ? 4 : 0) + ((palette >> (color_id * 2)) & 3)];
+                rgba = obj_palette_rgba[((sprite.attributes & SPRITE_PALETTE) ? COLOURS_PER_PALETTE : 0) + ((palette >> (color_id * 2)) & 3)];
             else
-                rgba = obj_palette_rgba[((sprite.attributes & 0x07) << 2) | color_id];
+                rgba = obj_palette_rgba[((sprite.attributes & CGB_ATTR_PALETTE_MASK) * COLOURS_PER_PALETTE) | color_id];
             sprite_line[px] = { rgba, sprite.attributes, true };
         }
     }
@@ -170,9 +170,9 @@ void PPU::render_scanline(Memory& memory)
         bool draw_window = window_visible_this_line && (x >= (wx - WINDOW_X_OFFSET));
         uint8_t pixel_x = draw_window ? x - (wx - WINDOW_X_OFFSET) : (x + scx) & 0xFF;
         uint8_t pixel_y = draw_window ? window_line_counter : (scanline + scy) & 0xFF;
-        int tile_x = pixel_x / 8;
+        int tile_x = pixel_x / TILE_SIZE_PX;
         
-        if(draw_window)
+        if (draw_window)
         {
             window_rendered_this_line = true;
         } 
@@ -184,9 +184,9 @@ void PPU::render_scanline(Memory& memory)
             cached_was_window = draw_window;
         }
 
-        int bit_pos = (cached_tile_bytes.attr & 0x20) ? (pixel_x % 8) : 7 - (pixel_x % 8);
+        int bit_pos = (cached_tile_bytes.attr & BG_ATTR_FLIP_X) ? (pixel_x % TILE_SIZE_PX) : (TILE_SIZE_PX - 1) - (pixel_x % TILE_SIZE_PX);
         uint8_t bg_color_id = ((cached_tile_bytes.byte2 >> bit_pos) & 1) << 1 | ((cached_tile_bytes.byte1 >> bit_pos) & 1);
-        bool bg_attr_priority = cached_tile_bytes.attr & 0x80;
+        bool bg_attr_priority = cached_tile_bytes.attr & BG_ATTR_PRIORITY;
         uint8_t bg_color = (bgp >> (bg_color_id * 2)) & 0x03;
         
         uint32_t bg_rgba;
@@ -200,7 +200,7 @@ void PPU::render_scanline(Memory& memory)
         }
         else
         {
-            bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & 0x07) << 2) | bg_color_id];
+            bg_rgba = bg_palette_rgba[((cached_tile_bytes.attr & CGB_ATTR_PALETTE_MASK) * COLOURS_PER_PALETTE) | bg_color_id];
         }
         
         bool     sprite_present = sprite_line[x].present;
@@ -209,7 +209,7 @@ void PPU::render_scanline(Memory& memory)
         sprite_line[x].present = false; // reset for the next scanline
 
         uint32_t final_rgba;
-        if(cgb_mode && !dmg_compat)
+        if (cgb_mode && !dmg_compat)
         {
             if (!sprite_present)
             {
@@ -249,7 +249,7 @@ void PPU::render_scanline(Memory& memory)
         rgba_buffer[scanline * SCREEN_WIDTH + x] = final_rgba;
     }
 
-    if(window_rendered_this_line)
+    if (window_rendered_this_line)
     {
         window_line_counter++;
     }
@@ -319,14 +319,14 @@ void PPU::scan_oam(Memory& memory)
     uint8_t lcdc = memory.read_io_raw(IO_LCDC);
 
     // If sprites are disabled, skip scanning OAM
-    if(!(lcdc & LCDC_OBJ_ENABLE))
+    if (!(lcdc & LCDC_OBJ_ENABLE))
     {
         return; // Sprites are disabled
     }
 
-    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
+    int sprite_height = (lcdc & LCDC_OBJ_SIZE) ? SPRITE_HEIGHT_TALL : SPRITE_HEIGHT_NORMAL;
 
-    for(int i = 0; i < OAM_SPRITE_COUNT; i++)
+    for (int i = 0; i < OAM_SPRITE_COUNT; i++)
     {
         // Each sprite takes 4 bytes in OAM
         uint16_t sprite_addr = OAM_BASE + (i * 4);
@@ -337,16 +337,16 @@ void PPU::scan_oam(Memory& memory)
         uint8_t tile = memory.read_oam(sprite_addr + 2);
         uint8_t attributes = memory.read_oam(sprite_addr + 3);
 
-        if(y == 0 || y >= SCREEN_HEIGHT + SPRITE_Y_OFFSET) continue; // Sprite is off-screen vertically
+        if (y == 0 || y >= SCREEN_HEIGHT + SPRITE_Y_OFFSET) continue; // Sprite is off-screen vertically
 
         int sprite_top = y - SPRITE_Y_OFFSET; // Adjust for sprite offset
         int sprite_bottom = sprite_top + sprite_height;
 
-        if(scanline >= sprite_top && scanline < sprite_bottom)
+        if (scanline >= sprite_top && scanline < sprite_bottom)
         {
             visible_sprites[visible_sprite_count++] = {y, x, tile, attributes, static_cast<uint8_t>(i)};
 
-            if(visible_sprite_count >= MAX_SPRITES_PER_LINE)
+            if (visible_sprite_count >= MAX_SPRITES_PER_LINE)
             {
                 break; // Reached max sprites for this line
             }
@@ -354,12 +354,12 @@ void PPU::scan_oam(Memory& memory)
     }
 
     // DMG priority: lower X wins; ties broken by lower OAM index (already in order)
-    bool dmg_priority = !cgb_mode || (memory.read_io_raw(IO_OPRI) & 1);
-    if(dmg_priority)
+    bool dmg_priority = !cgb_mode || (memory.read_io_raw(IO_OPRI) & OPRI_DMG_PRIORITY);
+    if (dmg_priority)
     {
         std::sort(visible_sprites.begin(), visible_sprites.begin() + visible_sprite_count,
             [](const Sprite& a, const Sprite& b) {
-                if(a.x != b.x) return a.x < b.x;
+                if (a.x != b.x) return a.x < b.x;
                 return a.oam_index < b.oam_index;
             });
     }
@@ -368,16 +368,16 @@ void PPU::scan_oam(Memory& memory)
 
 TileBytes PPU::fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory& memory)
 {
-    uint8_t bank = (cgb_mode && !dmg_compat) ? (sprite.attributes >> 3) & 1 : 0;
+    uint8_t bank = (cgb_mode && !dmg_compat) ? ((sprite.attributes & CGB_ATTR_VRAM_BANK) ? 1 : 0) : 0;
     int pixel_y = scanline - (sprite.y - SPRITE_Y_OFFSET);
     if (sprite.attributes & SPRITE_FLIP_Y)
         pixel_y = (sprite_height - 1) - pixel_y;
 
     uint8_t tile_index = sprite.tile_index;
-    if (sprite_height == 16)
+    if (sprite_height == SPRITE_HEIGHT_TALL)
     {
-        if (pixel_y >= 8) { tile_index = (sprite.tile_index & 0xFE) + 1; pixel_y -= 8; }
-        else              { tile_index = sprite.tile_index & 0xFE; }
+        if (pixel_y >= TILE_SIZE_PX) { tile_index = (sprite.tile_index & 0xFE) + 1; pixel_y -= TILE_SIZE_PX; }
+        else                         { tile_index = sprite.tile_index & 0xFE; }
     }
 
     uint16_t tile_row_addr = ADDR_VRAM_START + tile_index * BYTES_PER_TILE + pixel_y * 2;
@@ -386,11 +386,11 @@ TileBytes PPU::fetch_sprite_row(const Sprite& sprite, int sprite_height, Memory&
 
 TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory)
 {
-    uint8_t tile_y = pixel_y / 8;
-    uint8_t tile_x = pixel_x / 8;
+    uint8_t tile_y = pixel_y / TILE_SIZE_PX;
+    uint8_t tile_x = pixel_x / TILE_SIZE_PX;
     uint16_t tile_map_addr = tile_map_base + tile_y * TILE_MAP_COLS + tile_x;
     uint8_t attr = (cgb_mode && !dmg_compat) ? memory.read_vram_bank(tile_map_addr, 1) : 0;
-    uint8_t bank = (attr >> 3) & 1;
+    uint8_t bank = (attr & CGB_ATTR_VRAM_BANK) ? 1 : 0;
     uint8_t tile_id = memory.read_vram(tile_map_addr);
     
     // Get tile data address
@@ -398,7 +398,7 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     if (signed_tile_ids)
     {
         int8_t signed_id = static_cast<int8_t>(tile_id);
-        tile_addr = tile_data_base + (signed_id + 128) * BYTES_PER_TILE;
+        tile_addr = tile_data_base + (signed_id + SIGNED_TILE_ID_BIAS) * BYTES_PER_TILE;
     }
     else
     {
@@ -406,10 +406,10 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
     }
     
     // Get pixel within tile
-    uint8_t tile_pixel_y = pixel_y % 8;
-    if (attr & 0x40)
+    uint8_t tile_pixel_y = pixel_y % TILE_SIZE_PX;
+    if (attr & BG_ATTR_FLIP_Y)
     {
-        tile_pixel_y = 7 - tile_pixel_y; // Flip Y within the tile
+        tile_pixel_y = (TILE_SIZE_PX - 1) - tile_pixel_y; // Flip Y within the tile
     }
     
     // Each tile row is 2 bytes
@@ -425,101 +425,36 @@ TileBytes PPU::fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_ma
 
 int PPU::current_oam_row() const
 {
-    if(lcd_off || mode != PPUMode::OAMSearch) return -1;
+    if (lcd_off || mode != PPUMode::OAMSearch) return -1;
     int row = mode_cycles / 4; // Each OAM row takes 4 cycles
     return row < OAM_ROWS ? row : -1;
 }
 
-void PPU::corrupt_oam(Memory& memory, OamCorruption type)
-{
-    int row = current_oam_row();
-    if(row < 0) return; // Not in OAM search mode
-
-    switch(type)
-    {
-        case OamCorruption::Read: read_corruption(memory, row); break;
-        case OamCorruption::Write: write_corruption(memory, row); break;
-        case OamCorruption::ReadIncDec:  read_incdec_corruption(memory, row); break;
-    }
-}
-
-uint32_t PPU::cgb_color_to_rgba(uint16_t rgb555) const
-{
-    uint8_t r5 = rgb555 & 0x1F;
-    uint8_t g5 = (rgb555 >> 5) & 0x1F;
-    uint8_t b5 = (rgb555 >> 10) & 0x1F;
-    
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-
-    if(color_correction)
-    {
-        r = (r5 * 13 + g5 * 2 + b5) >> 1;
-        g = (g5 * 3 + b5) << 1;
-        b = (r5 * 3 + g5 * 2 + b5 * 11) >> 1;
-    }
-    else
-    {
-         r = r5 << 3;
-        g = g5 << 3;
-        b = b5 << 3;
-    }
-    return pack_rgba32(r, g, b);
-}
-
-uint32_t PPU::blank_rgba() const
-{
-    return cgb_mode ? cgb_color_to_rgba(0x7FFF) : GB_PALETTE_RGBA32[0];
-}
-
-void PPU::update_palette_color(bool obj, int colour, uint16_t rgb555)
-{
-    if(obj)
-    {
-        obj_palette_rgba[colour] = cgb_color_to_rgba(rgb555);
-    }
-    else
-    {
-        bg_palette_rgba[colour] =cgb_color_to_rgba(rgb555);
-    }
-}
-
-void PPU::rebuild_palette_cache(const Memory& memory)
-{
-    for(int i = 0; i < 32; i++)
-    {
-        uint16_t bg_color = memory.bg_palette_ram[i*2] | memory.bg_palette_ram[i*2+1] << 8;
-        uint16_t obj_color = memory.obj_palette_ram[i*2] | memory.obj_palette_ram[i*2+1] << 8;
-        update_palette_color(false, i, bg_color);
-        update_palette_color(true, i, obj_color);
-    }
-}
-
-uint16_t oam_word(const Memory& memory, int row, int word)
+// OAM corruption helpers. OAM is 20 rows of 4 16-bit words; the bug mixes a row with the previous one.
+static uint16_t oam_word(const Memory& memory, int row, int word)
 {
     int i = row * 8 + word * 2;
     return static_cast<uint16_t>(memory.oam[i]) | (static_cast<uint16_t>(memory.oam[i + 1]) << 8);
 }
 
-void set_oam_word(Memory& memory, int row, int word, uint16_t value)
+static void set_oam_word(Memory& memory, int row, int word, uint16_t value)
 {
     int i = row * 8 + word * 2;
     memory.oam[i] = static_cast<uint8_t>(value & 0xFF);
     memory.oam[i + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
 }
 
-void copy_oam_tail(Memory& memory, int dst, int src)
+static void copy_oam_tail(Memory& memory, int dst, int src)
 {
     std::memcpy(memory.oam + dst * 8 + 2, memory.oam + src * 8 + 2, 6);
 }
 
-void copy_oam_row(Memory& memory, int dst, int src)
+static void copy_oam_row(Memory& memory, int dst, int src)
 {
     std::memcpy(memory.oam + dst * 8, memory.oam + src * 8, 8);
 }
 
-void write_corruption(Memory& memory, int row)
+static void write_corruption(Memory& memory, int row)
 {
     if (row <= 0) return; // No previous row to copy from
     uint16_t a = oam_word(memory, row, 0);
@@ -530,7 +465,7 @@ void write_corruption(Memory& memory, int row)
     copy_oam_tail(memory, row, row - 1);
 }
 
-void read_corruption(Memory& memory, int row)
+static void read_corruption(Memory& memory, int row)
 {
     if (row <= 0) return; // No previous row to copy from
     uint16_t a = oam_word(memory, row, 0);
@@ -541,9 +476,10 @@ void read_corruption(Memory& memory, int row)
     copy_oam_tail(memory, row, row - 1);
 }
 
-void read_incdec_corruption(Memory& memory, int row)
+static void read_incdec_corruption(Memory& memory, int row)
 {
-    if (row >= 4 && row < OAM_ROWS - 1) {
+    if (row >= 4 && row < OAM_ROWS - 1)
+    {
         uint16_t a = oam_word(memory, row - 2, 0);
         uint16_t b = oam_word(memory, row - 1, 0);
         uint16_t c = oam_word(memory, row, 0);
@@ -553,4 +489,72 @@ void read_incdec_corruption(Memory& memory, int row)
         copy_oam_row(memory, row - 2, row - 1);
     }
     read_corruption(memory, row); // applied regardless of the above
+}
+
+void PPU::corrupt_oam(Memory& memory, OamCorruption type)
+{
+    int row = current_oam_row();
+    if (row < 0) return; // Not in OAM search mode
+
+    switch (type)
+    {
+        case OamCorruption::Read: read_corruption(memory, row); break;
+        case OamCorruption::Write: write_corruption(memory, row); break;
+        case OamCorruption::ReadIncDec:  read_incdec_corruption(memory, row); break;
+    }
+}
+
+uint32_t PPU::cgb_color_to_rgba(uint16_t rgb555) const
+{
+    uint8_t r5 = rgb555 & RGB555_CHANNEL_MASK;
+    uint8_t g5 = (rgb555 >> 5) & RGB555_CHANNEL_MASK;
+    uint8_t b5 = (rgb555 >> 10) & RGB555_CHANNEL_MASK;
+    
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+
+    if (color_correction)
+    {
+        // Approximates the CGB LCD, whose pigments bleed into each other. Each channel's weights
+        // scale to 8x, the same scale as the plain path below.
+        r = (r5 * 13 + g5 * 2 + b5) >> 1;
+        g = (g5 * 3 + b5) << 1;
+        b = (r5 * 3 + g5 * 2 + b5 * 11) >> 1;
+    }
+    else
+    {
+        r = r5 << 3;
+        g = g5 << 3;
+        b = b5 << 3;
+    }
+    return pack_rgba32(r, g, b);
+}
+
+uint32_t PPU::blank_rgba() const
+{
+    return cgb_mode ? cgb_color_to_rgba(CGB_WHITE_RGB555) : GB_PALETTE_RGBA32[0];
+}
+
+void PPU::update_palette_color(bool obj, int colour, uint16_t rgb555)
+{
+    if (obj)
+    {
+        obj_palette_rgba[colour] = cgb_color_to_rgba(rgb555);
+    }
+    else
+    {
+        bg_palette_rgba[colour] = cgb_color_to_rgba(rgb555);
+    }
+}
+
+void PPU::rebuild_palette_cache(const Memory& memory)
+{
+    for (int i = 0; i < CRAM_COLOURS; i++)
+    {
+        uint16_t bg_color = memory.bg_palette_ram[i * CRAM_COLOUR_BYTES] | memory.bg_palette_ram[i * CRAM_COLOUR_BYTES + 1] << 8;
+        uint16_t obj_color = memory.obj_palette_ram[i * CRAM_COLOUR_BYTES] | memory.obj_palette_ram[i * CRAM_COLOUR_BYTES + 1] << 8;
+        update_palette_color(false, i, bg_color);
+        update_palette_color(true, i, obj_color);
+    }
 }

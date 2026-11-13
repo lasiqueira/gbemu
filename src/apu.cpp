@@ -41,7 +41,7 @@ void APU::step(int sys, int cycles, Memory& memory)
     uint16_t div_before = memory.div_counter;
     uint16_t div_after = div_before + cycles;
     // DIV runs twice as fast in double speed, so watch one bit higher to keep the sequencer at 512 Hz
-    uint16_t mask = memory.double_speed ? 0x2000 : 0x1000;
+    uint16_t mask = memory.double_speed ? FRAME_SEQ_DIV_BIT_DOUBLE : FRAME_SEQ_DIV_BIT;
     if ((div_before & mask) && !(div_after & mask))
     {
         frame_seq_step();
@@ -84,7 +84,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel3 = {};
                 channel4 = {};
 
-                if(!cgb_mode)
+                if (!cgb_mode)
                 {
                     channel1.length_counter = lc1;
                     channel2.length_counter = lc2;
@@ -131,7 +131,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         {
             if (master_enabled) channel1.duty = (value >> 6) & 0x03; // duty bits don't apply while powered off
             channel1.length_value = value & 0x3F;
-            channel1.length_counter = 64 - channel1.length_value;
+            channel1.length_counter = LENGTH_MAX - channel1.length_value;
         } break;
 
         case IO_NR12:
@@ -148,13 +148,13 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
 
         case IO_NR13:
         {
-            channel1.period_value = (channel1.period_value & 0x0700) | value;
+            channel1.period_value = (channel1.period_value & PERIOD_HIGH_MASK) | value;
             channel1.period_reload = (APU_PERIOD_MAX - channel1.period_value) * 4;
         } break;
 
         case IO_NR14:
         {
-            channel1.period_value = (channel1.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel1.period_value = (channel1.period_value & PERIOD_LOW_MASK) | ((value & NRX4_PERIOD_HIGH_BITS) << 8);
             channel1.period_reload = (APU_PERIOD_MAX - channel1.period_value) * 4;
             bool old_len1 = channel1.length_enabled;
             channel1.length_enabled = (value & 0x40) != 0;
@@ -177,7 +177,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                     if (next >= APU_PERIOD_MAX) channel1.enabled = false;
                 }
             }
-            apply_length_clock(channel1, old_len1, trigger, 64);
+            apply_length_clock(channel1, old_len1, trigger, LENGTH_MAX);
         } break;
 
         // Channel 2 registers
@@ -185,7 +185,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         {
             if (master_enabled) channel2.duty = (value >> 6) & 0x03; // duty bits don't apply while powered off
             channel2.length_value = value & 0x3F;
-            channel2.length_counter = 64 - channel2.length_value;
+            channel2.length_counter = LENGTH_MAX - channel2.length_value;
         } break;
 
         case IO_NR22:
@@ -202,13 +202,13 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
 
         case IO_NR23:
         {
-            channel2.period_value = (channel2.period_value & 0x0700) | value;
+            channel2.period_value = (channel2.period_value & PERIOD_HIGH_MASK) | value;
             channel2.period_reload = (APU_PERIOD_MAX - channel2.period_value) * 4;
         } break;
 
         case IO_NR24:
         {
-            channel2.period_value = (channel2.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel2.period_value = (channel2.period_value & PERIOD_LOW_MASK) | ((value & NRX4_PERIOD_HIGH_BITS) << 8);
             channel2.period_reload = (APU_PERIOD_MAX - channel2.period_value) * 4;
             bool old_len2 = channel2.length_enabled;
             channel2.length_enabled = (value & 0x40) != 0;
@@ -220,7 +220,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel2.envelope.current_vol = channel2.envelope.initial_vol;
                 channel2.envelope.env_counter = channel2.envelope.env_pace;   
             }
-            apply_length_clock(channel2, old_len2, trigger, 64);
+            apply_length_clock(channel2, old_len2, trigger, LENGTH_MAX);
         } break;
 
         // Channel 3 registers
@@ -236,7 +236,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         case IO_NR31:
         {
             channel3.length_value = value;
-            channel3.length_counter = 256 - channel3.length_value;
+            channel3.length_counter = LENGTH_MAX_WAVE - channel3.length_value;
         } break;
 
         case IO_NR32:
@@ -246,13 +246,13 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
 
         case IO_NR33:
         {
-            channel3.period_value = (channel3.period_value & 0x0700) | value;
+            channel3.period_value = (channel3.period_value & PERIOD_HIGH_MASK) | value;
             channel3.period_reload = (APU_PERIOD_MAX - channel3.period_value) * 2;
         } break;
 
         case IO_NR34:
         {
-            channel3.period_value = (channel3.period_value & 0x00FF) | ((value & 0x07) << 8);
+            channel3.period_value = (channel3.period_value & PERIOD_LOW_MASK) | ((value & NRX4_PERIOD_HIGH_BITS) << 8);
             channel3.period_reload = (APU_PERIOD_MAX - channel3.period_value) * 2;
             bool old_len3 = channel3.length_enabled;
             channel3.length_enabled = (value & 0x40) != 0;
@@ -282,14 +282,14 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel3.period_timer = channel3.period_reload + 6; // DMG trigger delay before first sample fetch
                 channel3.wave_pos = 0;
             }
-            apply_length_clock(channel3, old_len3, trigger, 256);
+            apply_length_clock(channel3, old_len3, trigger, LENGTH_MAX_WAVE);
         } break;
 
         // Channel 4 registers
         case IO_NR41:
         {
             channel4.length_value = value & 0x3F;
-            channel4.length_counter = 64 - channel4.length_value;
+            channel4.length_counter = LENGTH_MAX - channel4.length_value;
         } break;
 
         case IO_NR42:
@@ -308,7 +308,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
         {
             channel4.clock_div = value & 0x07;
             channel4.clock_shift = (value >> 4) & 0x0F;
-            channel4.lfsr_width = (value & 0x08) ? 7 : 15; // Bit 3 determines LFSR width
+            channel4.lfsr_width = (value & NR43_LFSR_WIDTH_BIT) ? LFSR_WIDTH_SHORT : LFSR_WIDTH_LONG;
             channel4.period_reload = (channel4.clock_div == 0 ? 8 : channel4.clock_div * 16)
                           << channel4.clock_shift;
         } break;
@@ -326,7 +326,7 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
                 channel4.lfsr = APU_LFSR_INIT;
                 channel4.period_timer = channel4.period_reload;
             }
-            apply_length_clock(channel4, old_len4, trigger, 64);
+            apply_length_clock(channel4, old_len4, trigger, LENGTH_MAX);
         } break;
 
        default: break;
@@ -400,7 +400,7 @@ void APU::frame_seq_step()
 
 void APU::on_wave_ram_write(uint16_t offset, uint8_t value)
 {
-    if (offset < 16)
+    if (offset < WAVE_RAM_SIZE)
     {
         if (channel3.enabled)
         {
@@ -492,7 +492,7 @@ void Envelope::clock_envelope()
     if (env_counter == 0)
     {
         env_counter = env_pace;
-        if(env_add && current_vol < 15)
+        if (env_add && current_vol < ENVELOPE_VOLUME_MAX)
         {
             current_vol++;
         }
@@ -506,7 +506,7 @@ void Envelope::clock_envelope()
 void SquareChannelWithSweep::clock_sweep()
 {
     --sweep_counter;
-    if(sweep_counter > 0) return; // Not time to clock sweep yet
+    if (sweep_counter > 0) return; // Not time to clock sweep yet
 
     sweep_counter = (sweep_pace == 0) ? SWEEP_TIMER_DEFAULT : sweep_pace; // Reset sweep counter
 
@@ -517,7 +517,7 @@ void SquareChannelWithSweep::clock_sweep()
     int delta = shadow_period >> sweep_step;
     int new_freq = shadow_period + (sweep_negate ? -delta : +delta);
 
-    if(new_freq >= APU_PERIOD_MAX) // Frequency overflow, disable channel
+    if (new_freq >= APU_PERIOD_MAX) // Frequency overflow, disable channel
     {
         enabled = false;
         sweep_enabled = false;
@@ -584,7 +584,7 @@ void WaveChannel::step(int cycles)
     {
         just_read_sample = (period_timer == 0); // exact-cycle coincidence with the CPU's access
         period_timer += period_reload; // Timer counts down every 2 cycles
-        wave_pos = (wave_pos + 1) & 31; // Cycle through wave positions (32 samples)
+        wave_pos = (wave_pos + 1) & (WAVE_SAMPLE_COUNT - 1); // Cycle through the 32 wave positions
     }
 }
 
@@ -597,7 +597,7 @@ void NoiseChannel::step(int cycles)
         period_timer += period_reload; // Timer counts down based on clock shift and divisor
 
         uint8_t xor_bit = ((lfsr & 0x01) ^ ((lfsr >> 1) & 0x01));
-        lfsr = (lfsr >> 1) | (xor_bit << 14); // Shift LFSR and insert new bit at position 14
+        lfsr = (lfsr >> 1) | (xor_bit << LFSR_FEED_BIT); // Shift LFSR and insert the new bit at the top
 
         if (lfsr_width == 7)
         {
