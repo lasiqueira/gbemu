@@ -395,6 +395,25 @@ static void handle_gamepad_input(SDL_Event& event)
     set_joypad_button(button, pressed);
 }
 
+// Reads the background tile map (bank 0, $9800) as text, one string per non-blank row. Blargg's older test
+// shells (halt_bug, interrupt_time) only report on screen, using tile index == ASCII code.
+static std::vector<std::string> read_screen_text(const Memory& memory)
+{
+    std::vector<std::string> rows;
+    for (int row = 0; row < 32; ++row)
+    {
+        std::string line;
+        for (int col = 0; col < 32; ++col)
+        {
+            uint8_t tile = memory.read_vram_bank(0x9800 + row * 32 + col, 0);
+            line += (tile >= 0x20 && tile < 0x7F) ? static_cast<char>(tile) : '.';
+        }
+        while (!line.empty() && (line.back() == ' ' || line.back() == '.')) line.pop_back();
+        if (!line.empty()) rows.push_back(line);
+    }
+    return rows;
+}
+
 int main(int argc, char** argv)
 {
     std::println("Game Boy Emulator");
@@ -402,7 +421,7 @@ int main(int argc, char** argv)
     // Check command line arguments
     if (argc < 2)
     {
-        std::println(std::cerr, "Usage: {} <rom_path> [--disassemble|-d] [--headless] [--model=auto|dmg|cgb]", argv[0]);
+        std::println(std::cerr, "Usage: {} <rom_path> [--disassemble|-d] [--headless] [--timeout=SECONDS] [--model=auto|dmg|cgb]", argv[0]);
         return 1;
     }
     
@@ -411,7 +430,7 @@ int main(int argc, char** argv)
     
     // Check for disassemble flag
     bool headless_mode = false;
-
+    int headless_timeout_seconds = 120; // emulated seconds, --timeout=N
     std::string model_arg = "cgb"; // default model is cgb
 
     for (int i = 2; i < argc; ++i)
@@ -423,6 +442,8 @@ int main(int argc, char** argv)
             headless_mode = true;
         else if (arg.rfind("--model=", 0) == 0)
             model_arg = arg.substr(8);
+        else if (arg.rfind("--timeout=", 0) == 0)
+            headless_timeout_seconds = std::max(1, std::atoi(arg.c_str() + 10));
     }
 
     // Check if file exists
@@ -492,7 +513,7 @@ int main(int argc, char** argv)
     if (headless_mode)
     {
         gameboy.running = true;
-        constexpr int HEADLESS_TIMEOUT_FRAMES = 60 * 120; // 120 seconds max
+        const int HEADLESS_TIMEOUT_FRAMES = 60 * headless_timeout_seconds;
         // Signature written by blargg's init_text_out into ext_ram at offsets 1-3
         // $A001=$DE, $A002=$B0, $A003=$61 — indicates a RAM-output test has initialised
         auto ram_initialized = [&]() -> bool {
@@ -500,6 +521,7 @@ int main(int argc, char** argv)
             return r.size() >= 8 && r[1] == 0xDE && r[2] == 0xB0 && r[3] == 0x61;
         };
 
+        bool finished = false;
         for (int frame = 0; frame < HEADLESS_TIMEOUT_FRAMES && gameboy.running; ++frame)
         {
             gameboy.step_frame();
@@ -511,6 +533,7 @@ int main(int argc, char** argv)
                 sout.find("Failed") != std::string::npos ||
                 sout.find("failed") != std::string::npos)
             {
+                finished = true;
                 break;
             }
 
@@ -522,12 +545,45 @@ int main(int argc, char** argv)
                 const char* text = reinterpret_cast<const char*>(gameboy.memory.ext_ram.data() + 4);
                 std::printf("%s\n", text);
                 fflush(stdout);
+                finished = true;
                 break;
             }
+
+            // Screen-only tests (halt_bug, interrupt_time): look for the console verdict on the background map
+            if (frame % 30 == 0)
+            {
+                const auto rows = read_screen_text(gameboy.memory);
+                const bool verdict = std::any_of(rows.begin(), rows.end(), [](const std::string& r) {
+                    return r.find("Passed") != std::string::npos || r.find("Failed") != std::string::npos;
+                });
+                if (verdict)
+                {
+                    for (const auto& r : rows) std::printf("%s\n", r.c_str());
+                    fflush(stdout);
+                    finished = true;
+                    break;
+                }
+            }
+        }
+
+        // No verdict before the timeout: dump whatever output exists so manual-comparison tests
+        // such as interrupt_time can be read and stuck tests can be diagnosed.
+        if (!finished)
+        {
+            std::printf("[no verdict before timeout] pc=%04X ime=%d halted=%d\n",
+                        gameboy.cpu.pc, gameboy.cpu.ime ? 1 : 0, gameboy.cpu.halted ? 1 : 0);
+            if (!gameboy.memory.serial_output.empty())
+                std::printf("[serial output]\n%s\n", gameboy.memory.serial_output.c_str());
+            if (ram_initialized())
+                std::printf("[ext_ram output]\n%s\n",
+                            reinterpret_cast<const char*>(gameboy.memory.ext_ram.data() + 4));
+            std::printf("[screen]\n");
+            for (const auto& r : read_screen_text(gameboy.memory)) std::printf("%s\n", r.c_str());
+            fflush(stdout);
         }
         return 0;
     }
-    
+
     if (init() != 0)
     {
         std::println(std::cerr, "Failed to initialize SDL or ImGui.");

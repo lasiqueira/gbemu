@@ -259,9 +259,9 @@ void APU::on_register_write(uint16_t addr, uint8_t value)
             bool trigger = (value & 0x80) != 0;
             if (trigger)
             {
-                // DMG wave corruption: retriggering exactly as CH3 is about to read a byte latches
-                // that upcoming byte (or its 4-byte-aligned block) into wave RAM position 0.
-                if (!cgb_mode && channel3.enabled && channel3.just_read_sample)
+                // DMG wave corruption: retriggering one APU tick (2 clocks) before CH3 reads its next byte
+                // latches that upcoming byte (or its 4-byte-aligned block) into wave RAM position 0.
+                if (!cgb_mode && channel3.enabled && channel3.period_timer <= 2)
                 {
                     uint8_t pos_byte = ((channel3.wave_pos + 1) >> 1) & 0x0F; // byte about to be read, not the current one
                     

@@ -152,6 +152,7 @@ constexpr uint8_t INT_TIMER = 0x04; // Bit 2: Timer
 constexpr uint8_t INT_SERIAL = 0x08; // Bit 3: Serial
 constexpr uint8_t INT_JOYPAD = 0x10; // Bit 4: Joypad
 constexpr uint8_t INT_ALL_MASK = 0x1F; // Mask for all interrupt bits
+constexpr uint8_t IF_UNUSED_BITS = 0xE0; // IF bits 5-7 always read as 1
 
 // Interrupt vectors
 constexpr uint16_t INT_VECTOR_VBLANK = 0x0040;

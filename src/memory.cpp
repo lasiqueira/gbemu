@@ -209,6 +209,11 @@ uint8_t Memory::read(uint16_t addr) const
             return io[addr - ADDR_IO_START];
         }
 
+        if (addr == IO_IF)
+        {
+            return io[addr - ADDR_IO_START] | IF_UNUSED_BITS;
+        }
+
         if (addr == IO_VBK && cgb_mode) 
         {
             return vram_bank | VBK_UNUSED_BITS;

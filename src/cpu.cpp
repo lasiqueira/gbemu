@@ -966,8 +966,15 @@ int CPU::execute_instruction(Memory& memory)
         pc_history.pop_front();
     }
 #endif
-    uint16_t pc_before = pc;
     uint8_t opcode = bus_read(memory, pc);
+    if (halt_bug)
+    {
+        // HALT bug: the byte after HALT is fetched without advancing PC, so it is read twice.
+        // Handlers read operands at pc+1 and then add the instruction length, so running with
+        // pc-1 makes the opcode byte double as its own first operand and re-runs 1-byte instructions.
+        halt_bug = false;
+        pc -= 1;
+    }
     int cycles = [&]() -> int { switch (opcode)
     {
         case 0x00: return nop(); // NOP
@@ -1234,11 +1241,6 @@ int CPU::execute_instruction(Memory& memory)
             unimplemented_instruction(opcode, memory.rom);
             return -1; // Indicate error for unimplemented instruction
     } }();
-    if (halt_bug)
-    {
-        pc = pc_before; // Don't advance PC if halt bug is active
-        halt_bug = false; // Clear halt bug after it has taken effect
-    }
     return cycles;
 }
 
