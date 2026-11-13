@@ -1,6 +1,6 @@
 # Game Boy Emulator (gbemu)
 
-A Game Boy emulator implementation in C++ with complete graphics, input, and comprehensive documentation.
+A Game Boy and Game Boy Color emulator implementation in C++ with complete graphics, audio, input, and comprehensive documentation.
 
 ## Documentation
 
@@ -8,8 +8,10 @@ Detailed development documentation with step-by-step explanations is available i
 
 - Disassembler implementation
 - CPU and memory systems
-- Instruction set implementation (Part 1 & 2)
+- Instruction set implementation (Part 1, Part 2 and completing the CPU)
 - Input system and PPU rendering
+- Memory bank controllers and battery saves
+- Audio processing unit (APU)
 - Game Boy Color support
 
 ## Screenshot
@@ -37,6 +39,7 @@ Detailed development documentation with step-by-step explanations is available i
   - Sprite priority system and transparency
   - X/Y flipping for sprites
   - All PPU modes and timing (OAM Search, Drawing, H-Blank, V-Blank)
+  - Frames are completed at V-Blank, so the displayed image never tears
   - LCDC and STAT register support
 
 - **Input System**
@@ -88,14 +91,18 @@ Detailed development documentation with step-by-step explanations is available i
   - NR41 (CH4 length register) writable while APU powered off (DMG hardware behaviour)
   - Wave channel read/write while active only succeeds on exact-cycle coincidence with CH3's own sample fetch, else read returns 0xFF / write is dropped (DMG hardware behaviour)
   - SDL3 stereo audio stream at 44,100 Hz, 16-bit signed
-  - Frame-paced audio delivery
+  - Frame timing paced on the audio queue, so the sound card never underruns
 
-- **Game Boy Color (in progress)**
-  - Model selection (`--model=auto|dmg|cgb`) and runtime hotkeys
-  - VRAM and WRAM banking, CGB palette RAM, BG/OBJ attributes and priority
-  - Double-speed mode and HDMA/GDMA
-  - DMG games on CGB hardware run in compatibility mode (greyscale placeholder palette for now)
-  - DMG-only quirks (OAM bug, wave RAM lockout, power-off length counters) disabled on CGB; `cgb_sound` passes
+- **Game Boy Color**
+  - Hardware model selection: `--model=cgb|dmg|auto`, with CGB as the default
+  - Switchable at runtime with hotkeys (pause, reset, cycle model, toggle colour correction)
+  - Two 8 KiB VRAM banks (VBK) and eight 4 KiB WRAM banks (SVBK)
+  - BG and OBJ colour palette RAM (BGPI/BGPD/OBPI/OBPD) with auto-increment and optional LCD colour correction
+  - BG/window tile attributes (palette, tile bank, X/Y flip, BG-to-OBJ priority) and OBJ attributes with the OPRI priority mode
+  - Double-speed mode (KEY1 + STOP), with the PPU, APU and RTC kept on real time
+  - HDMA and GDMA VRAM transfers (HBlank and general-purpose), paused during HALT
+  - DMG games on CGB hardware run in compatibility mode with the colours the real boot ROM picks from the game's title checksum
+  - DMG-only quirks (OAM bug, wave RAM lockout and retrigger corruption, length counters surviving power-off) are switched off on CGB hardware, and CGB-only registers are hidden from DMG cartridges
   - See [docs/colour.html](docs/colour.html)
 
 - **Complete Game Boy Instruction Disassembler**
@@ -184,9 +191,15 @@ With the default (`cgb`), DMG games run in colour, with the palette the real Gam
 - **F1** - Pause / resume
 - **F2** - Reset (reloads the ROM; battery saves are written first)
 - **F3** - Cycle the model `auto → DMG → CGB`, then reload
-- **F4** - Toggle CGB colour correction
+- **F4** - Toggle CGB colour correction (kept across reset and model changes)
 
-The window title shows the selected model and what is actually running, for example `[auto -> DMG]`. Forcing DMG on a CGB-only cartridge runs it as a DMG game and will probably not display correctly.
+The window title shows the selected model and what is actually running, for example `[auto -> DMG]` or `[CGB -> CGB (DMG compat)]`. Forcing DMG on a CGB-only cartridge runs it as a DMG game and will probably not display correctly.
+
+To run the Blargg DMG test ROMs headlessly (no window), pass `--headless`, and use `--model=dmg` to match original-hardware results:
+
+```bash
+.\build\bin\Release\gbemu.exe gb-test-roms-master\cpu_instrs\cpu_instrs.gb --headless --model=dmg
+```
 
 **Controls:**
 
@@ -230,7 +243,7 @@ cmake --build build                   # Linux/macOS
 .\build\bin\Release\gbemu.exe rom.gb         # Windows
 ```
 
-**Debug output** shows detailed CPU state and instruction trace:
+**Debug output** shows detailed CPU state and instruction trace. Debug builds also show the ImGui panels (disassembly, CPU state, memory viewer), which include a colour-correction checkbox and a model selector:
 ```
 Executing: 0xC3 at PC: 0x0101
 JP $0150
@@ -264,15 +277,21 @@ The test suite covers all 256+ Game Boy instructions with complete register and 
 ├── CMakeLists.txt              # Build configuration
 ├── .gitignore                  # Git ignore rules
 ├── src/
-│   ├── main.cpp               # Entry point with SDL integration
+│   ├── main.cpp               # Entry point: SDL window, audio, input, hotkeys, ImGui debug panels
+│   ├── constants.h            # Register addresses, memory map, header offsets and bit layouts
 │   ├── gameboy.h              # Game Boy system declarations
-│   ├── gameboy.cpp            # Game Boy system implementation
+│   ├── gameboy.cpp            # System loop, model selection, post-boot state, speed switch, HDMA
 │   ├── cpu.h                  # CPU declarations
 │   ├── cpu.cpp                # CPU implementation
 │   ├── memory.h               # Memory system declarations
-│   ├── memory.cpp             # Memory system implementation
+│   ├── memory.cpp             # Memory map, MBCs, banking, I/O registers, battery saves
 │   ├── ppu.h                  # PPU/graphics declarations
-│   ├── ppu.cpp                # PPU/graphics implementation
+│   ├── ppu.cpp                # PPU/graphics implementation (DMG and CGB rendering)
+│   ├── apu.h                  # Audio processing unit declarations
+│   ├── apu.cpp                # Four-channel APU and mixer
+│   ├── compat_palettes.h      # DMG-on-CGB palette lookup interface
+│   ├── compat_palettes.cpp    # Title checksum lookup, as done by the CGB boot ROM
+│   ├── compat_palette_data.h  # Boot ROM checksum and palette tables
 │   ├── disassembler.h         # Instruction disassembler declarations
 │   ├── disassembler.cpp       # Instruction disassembler implementation
 │   └── test_disasm.cpp        # Comprehensive test suite
@@ -282,11 +301,18 @@ The test suite covers all 256+ Game Boy instructions with complete register and 
 │   ├── cpu_and_memory.html    # CPU and memory systems
 │   ├── instructions_part1.html # Instruction implementation
 │   ├── instructions_part2.html # More instructions
+│   ├── instructions_final.html # Completing the instruction set
 │   ├── input_and_rendering.html # Input and PPU systems
+│   ├── memory_bank_controller.html # MBC1/2/3/5 and battery saves
+│   ├── apu.html               # Audio processing unit
+│   ├── colour.html            # Game Boy Color support
+│   ├── images/                # Screenshots
 │   └── style.css              # Documentation styling
 ├── vendor/                     # Third-party dependencies (SDL3, ImGui)
 └── README.md                   # This file
 ```
+
+Test ROMs (for example the Blargg suites in `gb-test-roms-master/`) are not tracked in the repository.
 
 ## Architecture
 
@@ -320,43 +346,50 @@ struct CPU {
     RegisterPair bc, de, hl, af;  // 8/16-bit register pairs
     uint16_t sp, pc;               // Stack pointer, Program counter
     
-    int execute(Memory& memory);   // Execute one instruction
+    int execute_instruction(Memory& memory);  // Execute one instruction, returns cycles
 };
 ```
 
 **Key Features:**
 - Register pairs use unions for dual 8-bit/16-bit access (e.g., `bc.high`, `bc.low`, `bc.pair`)
 - Flag register helpers for Z, N, H, C flags
-- Cycle-accurate instruction timing
+- M-cycle-accurate bus timing: every memory access ticks the PPU, APU and timers at the moment it happens
 - Integration with disassembler for debugging unimplemented opcodes
 
 ### Memory System
 
-The memory system provides a flat 64KB address space with proper region mapping:
+The memory system provides a 64KB address space with banked regions for the Game Boy Color:
 
 ```cpp
 struct Memory {
-    std::vector<uint8_t> rom;      // Cartridge ROM (0x0000-0x7FFF)
-    std::array<uint8_t, 8192> wram; // Work RAM (0xC000-0xDFFF)
-    std::array<uint8_t, 127> hram;  // High RAM (0xFF80-0xFFFE)
+    std::vector<uint8_t> rom;        // Cartridge ROM, banked by the MBC
+    std::vector<uint8_t> ext_ram;    // Cartridge RAM (battery-backed when present)
+    uint8_t vram[0x4000];            // Two 8 KiB VRAM banks (second bank is CGB only)
+    uint8_t wram[0x8000];            // Eight 4 KiB WRAM banks (CGB); two on DMG
+    uint8_t bg_palette_ram[64];      // CGB colour RAM
+    uint8_t obj_palette_ram[64];
     
-    uint8_t read(uint16_t address);
+    uint8_t read(uint16_t address) const;
     void write(uint16_t address, uint8_t value);
 };
 ```
 
+I/O register reads and writes are model-aware: CGB-only registers (KEY1, VBK, HDMA, SVBK) are hidden from DMG cartridges, and the APU registers are forwarded to the APU.
+
 ### PPU (Picture Processing Unit)
 
-The PPU handles all graphics rendering with three layers:
+The PPU handles all graphics rendering with three layers and renders each scanline to an RGBA framebuffer:
 
 ```cpp
 struct PPU {
-    std::array<uint8_t, 23040> rgba_buffer;  // 160x144 RGBA framebuffer
-    std::array<Sprite, 10> visible_sprites;  // Up to 10 sprites per scanline
-    uint8_t window_line_counter;             // Internal window line counter
+    std::array<uint32_t, 160 * 144> rgba_buffer;  // RGBA framebuffer
+    std::array<Sprite, 10> visible_sprites;       // Up to 10 sprites per scanline
+    std::array<uint32_t, 32> bg_palette_rgba;     // CGB palettes, converted to RGBA once
+    std::array<uint32_t, 32> obj_palette_rgba;
+    uint8_t window_line_counter;                  // Internal window line counter
     
-    void step(int cycles, Memory& memory);   // Execute PPU for N cycles
-    void render_scanline(Memory& memory);    // Render current scanline
+    void step(int cycles, Memory& memory);       // Execute PPU for N cycles
+    void render_scanline(Memory& memory);        // Render current scanline
 };
 ```
 
@@ -365,8 +398,14 @@ struct PPU {
 - Window layer for UI overlays (separate from background scrolling)
 - Sprite rendering with OAM scanning
 - 4 PPU modes: OAM Search (80 cycles), Drawing (172 cycles), H-Blank (204 cycles), V-Blank
-- Proper sprite priority (lower OAM index = higher priority)
+- DMG sprite priority (lower X wins) or CGB OAM-order priority, selected by OPRI
 - Sprite attributes: X/Y flip, palette selection, BG priority
+- CGB colour: per-tile palettes and banks, flips, BG-to-OBJ priority, optional LCD colour correction
+- DMG games in compatibility mode index into CGB palette RAM through BGP/OBP0/OBP1
+
+### Audio (APU)
+
+The APU runs four channels (two square waves, a wave channel and a noise channel) clocked by a 512 Hz frame sequencer. `APU::step` advances the channels and mixes a stereo sample at 44.1 kHz into a buffer that `main.cpp` hands to an SDL3 audio stream once per frame. Some behaviours depend on the hardware model, such as wave RAM access while a channel plays and length counters across power-off, so the APU keeps its own copy of the `cgb_mode` flag.
 
 ### Game Boy System
 
@@ -379,11 +418,13 @@ struct GameBoy {
     PPU ppu;
     APU apu;
     
+    void load_rom(const std::vector<uint8_t>& rom, const std::string& rom_path);
     int step();                    // Execute one instruction
-    int step_frame();              // Execute one frame (~70224 cycles)
-    void run();                    // Main emulation loop
+    int step_frame();              // Run until the PPU enters V-Blank
 };
 ```
+
+`load_rom` resets the machine, loads the cartridge, resolves the hardware model (`DMG`, `CGB`, or `auto` from the cartridge header), applies the post-boot register state for that model, and restores any battery save. Resetting the emulator means calling it again.
 
 **Timing Constants:**
 - CPU Frequency: 4.194304 MHz
@@ -391,6 +432,7 @@ struct GameBoy {
 - Cycles per Frame: ~70224
 - Cycles per Scanline: 456
 - Scanlines per Frame: 154 (144 visible + 10 V-Blank)
+- In CGB double-speed mode the CPU and timers run twice as fast while the PPU, APU and RTC stay on real time
 
 ### Implementation Details
 
@@ -441,7 +483,7 @@ Addr  Instruction           Flags       Len  Cycles
 
 **Fully playable!**
 
-The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_instrs tests, and produces full stereo audio. MBC1–MBC5 cartridge support enables the full commercial game library.
+The emulator successfully runs Tetris and Pokémon in both original Game Boy and Game Boy Color modes, passes all 11 Blargg cpu_instrs tests, and produces full stereo audio. MBC1–MBC5 cartridge support enables the full commercial game library, and DMG games run in colour by default.
 
 ### Implemented Features
 
@@ -500,12 +542,29 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 - ✅ NR51 stereo panning, NR50 master volume, NR52 master enable with DMG power-cycle behaviour
 - ✅ Wave channel active read/write only succeeds on exact-cycle coincidence with CH3's own fetch
 - ✅ 44,100 Hz stereo output via SDL3 audio stream
+- ✅ Frame pacing driven by the audio queue (no underruns or pops)
+
+**Game Boy Color:**
+- ✅ Hardware model resolved at load time (`cgb` / `dmg` / `auto`), CGB by default
+- ✅ CGB post-boot state (A = $11) and per-model reset
+- ✅ VRAM banking (VBK) and WRAM banking (SVBK)
+- ✅ BG and OBJ palette RAM with auto-increment, RGB555 conversion and optional colour correction
+- ✅ BG/window tile attributes (palette, bank, X/Y flip, priority) and OBJ attributes with OPRI priority mode
+- ✅ BG-to-OBJ priority resolution
+- ✅ Double-speed mode (KEY1 + STOP)
+- ✅ HDMA / GDMA, including the HALT pause
+- ✅ DMG-on-CGB compatibility mode with authentic per-game palettes from the boot ROM's title checksum table, and the compat-mode boot register values
+- ✅ DMG-only quirks gated off on CGB hardware; CGB-only registers hidden from DMG cartridges
+- ✅ CGB wave RAM power-on pattern
+- ✅ Hotkeys for pause, reset, model cycling and colour correction
 
 **Documentation:**
 - ✅ Comprehensive HTML documentation covering all implemented systems
 - ✅ Step-by-step development log
 
 ### Test ROM Results
+
+The results below are for the original Game Boy (`--model=dmg`). Game Boy Color results are listed at the end of this section.
 
 **Blargg cpu_instrs — all tests pass:**
 - ✅ 01: special
@@ -561,7 +620,11 @@ The emulator successfully runs Tetris and Pokémon, passes all 11 Blargg cpu_ins
 
 **Blargg interrupt_time — not measurable headlessly (manual-comparison test, no pass/fail signature)**
 
-**Blargg cgb_sound — skipped (CGB-only test suite, not applicable to this DMG-only emulator)**
+**Game Boy Color (`--model=cgb`):**
+- ✅ Blargg cgb_sound — all 12 tests pass
+- ✅ cpu_instrs, instr_timing, mem_timing and mem_timing-2 pass
+- ➖ oam_bug and dmg_sound fail by design: they test DMG-only quirks (the OAM bug, wave RAM timing) that do not exist on CGB hardware
+- ⏳ Visual CGB test ROMs ([cgb-acid2](https://github.com/mattcurrie/cgb-acid2), [MagenTests](https://github.com/alloncm/MagenTests)) and double speed with a ROM that actually switches have not been run
 
 See [docs/blargg_test_status.md](docs/blargg_test_status.md) for the full pass/fail matrix,
 per-opcode failure detail, and a prioritized root-cause/remediation backlog for the remaining failures.
@@ -581,12 +644,14 @@ per-opcode failure detail, and a prioritized root-cause/remediation backlog for 
 - ✅ Overworld exploration with full background music (CH1–CH3) and sound effects (CH4)
 - ✅ Battle system with CH3 wave melody and CH4 noise effects
 - ✅ APU power cycling between screens (buildings, battles, menu transitions)
+- ✅ Runs in colour on CGB hardware, using the palette the real boot ROM picks for the game
 
 ## Future Work
 
+- **Frontend UI** (ROM picker, display and audio settings, controller remapping), so games no longer have to be started from the command line
 - **Save state functionality**
 - **Debugger interface** (memory viewer, breakpoints)
-- **Game Boy Color support** (in progress, see [docs/colour.html](docs/colour.html))
+- **Remaining Game Boy Color validation**: visual test ROMs and speed-switching games
 
 ## License
 
