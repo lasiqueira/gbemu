@@ -202,6 +202,19 @@ void GameBoy::set_cartridge_mode()
     memory.dmg_compat = dmg_compat;
 }
 
+// Writes 4 RGB555 colours into one palette of a CRAM bank (little-endian, 8 bytes per palette).
+static void write_cram_palette(uint8_t* cram, int palette, const uint16_t (&colours) [4])
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        cram[palette * 8 + i * 2] = colours[i] & 0xFF;
+        cram[palette * 8 + i * 2 + 1] = colours[i] >> 8;
+    }
+}
+
+// Temporary compat palette: white -> black. Replaced by the title-hash lookup in C16.
+constexpr uint16_t COMPAT_GREY[4] = { 0x7FFF, 0x56B5, 0x294A, 0x0000 };
+
 void GameBoy::apply_post_boot_state()
 {
     // Post-boot I/O register state (skipping boot ROM)
@@ -230,6 +243,12 @@ void GameBoy::apply_post_boot_state()
         memory.write_io_raw(IO_KEY1, 0x7E); // Normal speed, switch not armed
         memory.write_io_raw(IO_OPRI, dmg_compat ? 0x01 : 0x00); // CGB (OAM-order) object priority
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
+        if(dmg_compat)
+        {
+            write_cram_palette(memory.bg_palette_ram, 0, COMPAT_GREY);
+            write_cram_palette(memory.obj_palette_ram, 0, COMPAT_GREY);
+            write_cram_palette(memory.obj_palette_ram, 1, COMPAT_GREY);
+        }
         ppu.rebuild_palette_cache(memory);
     }
 }

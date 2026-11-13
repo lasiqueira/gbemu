@@ -179,6 +179,7 @@ struct PPU
     TileBytes fetch_tile_row(uint8_t pixel_x, uint8_t pixel_y, uint16_t tile_map_base, uint16_t tile_data_base, bool signed_tile_ids, Memory& memory);
 
     uint32_t cgb_color_to_rgba(uint16_t rgb555) const;
+    uint32_t blank_rgba() const;
     void update_palette_color(bool obj, int colour, uint16_t rgb555);  // colour = 0..31
     void rebuild_palette_cache(const Memory& memory);                  // all 64 entries   
 };

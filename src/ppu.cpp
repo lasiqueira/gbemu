@@ -18,7 +18,7 @@ void PPU::step(int cycles, Memory& memory)
             scanline = 0;
             window_line_counter = 0;
             memory.write_io_raw(IO_LY, 0);
-            rgba_buffer.fill(GB_PALETTE_RGBA32[0]);
+            rgba_buffer.fill(blank_rgba());
             frame_ready = true;
         }
         return;
@@ -107,7 +107,7 @@ void PPU::render_scanline(Memory& memory)
     {
         for (int x = 0; x < SCREEN_WIDTH; x++)
         {
-            rgba_buffer[scanline * SCREEN_WIDTH + x] = GB_PALETTE_RGBA32[0]; // Lightest color
+            rgba_buffer[scanline * SCREEN_WIDTH + x] = blank_rgba(); // Lightest color
         }
         return;
     }
@@ -466,6 +466,11 @@ uint32_t PPU::cgb_color_to_rgba(uint16_t rgb555) const
         b = b5 << 3;
     }
     return pack_rgba32(r, g, b);
+}
+
+uint32_t PPU::blank_rgba() const
+{
+    return cgb_mode ? cgb_color_to_rgba(0x7FFF) : GB_PALETTE_RGBA32[0];
 }
 
 void PPU::update_palette_color(bool obj, int colour, uint16_t rgb555)
