@@ -1,5 +1,6 @@
 #include "gameboy.h"
 #include <cstring>
+#include "compat_palettes.h"
 
 void GameBoy::reset()
 {
@@ -213,9 +214,6 @@ static void write_cram_palette(uint8_t* cram, int palette, const uint16_t (&colo
     }
 }
 
-// Temporary compat palette: white -> black. Replaced by the title-hash lookup in C16.
-constexpr uint16_t COMPAT_GREY[4] = { 0x7FFF, 0x56B5, 0x294A, 0x0000 };
-
 void GameBoy::apply_post_boot_state()
 {
     // Post-boot I/O register state (skipping boot ROM)
@@ -248,9 +246,14 @@ void GameBoy::apply_post_boot_state()
         std::memset(memory.bg_palette_ram, 0xFF, sizeof(memory.bg_palette_ram));
         if(dmg_compat)
         {
-            write_cram_palette(memory.bg_palette_ram, 0, COMPAT_GREY);
-            write_cram_palette(memory.obj_palette_ram, 0, COMPAT_GREY);
-            write_cram_palette(memory.obj_palette_ram, 1, COMPAT_GREY);
+            CompatPalettes p = pick_compat_palettes(memory.rom);
+            write_cram_palette(memory.bg_palette_ram, 0, p.bg);
+            write_cram_palette(memory.obj_palette_ram, 0, p.obj0);
+            write_cram_palette(memory.obj_palette_ram, 1, p.obj1);
+
+            cpu.bc.pair = static_cast<uint16_t>(p.checksum) << 8; // B - checksum, C = 0;
+            cpu.de.pair = 0x0008;
+            cpu.hl.pair = (p.checksum == 0x43 || p.checksum == 0x58) ? 0x991A : 0x007C;
         }
         ppu.rebuild_palette_cache(memory);
     }

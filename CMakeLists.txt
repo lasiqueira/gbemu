@@ -60,6 +60,7 @@ add_library(gbemu_core
     src/disassembler.cpp
     src/ppu.cpp
     src/apu.cpp
+    src/compat_palettes.cpp
 )
 target_include_directories(gbemu_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(gbemu_core PUBLIC SDL3::SDL3 imgui)
